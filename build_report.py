@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import base64
 import numpy as np
 import pandas as pd
 import markdown
@@ -87,7 +88,7 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
 使用公开的标普500价格与现金利率，本次196组抄底规则的平均夏普为 **{summary['mean_sharpe']:.3f}**，买入持有为 **{summary['benchmark']['sharpe']:.3f}**；**{int((grid.sharpe_gap < 0).sum())}/196组（{summary['underperform_share']:.1%}）**落后。平均年化alpha为 **{summary['mean_alpha_ann']:.3%}**。HAC口径下有{summary['hac_significant_count']}组通过5%单项检验，经Holm多重检验校正后为{summary['holm_significant_count']}组。
 
-这组实验支持“抄底规则整体难以改善风险调整后表现”的方向性判断。对个人项目而言，核心成果是把直觉写成清晰规则，完成数据与交易时序处理，用完整网格、成本和统计检验解释结果。
+这组实验支持“抄底规则整体难以改善风险调整后表现”的方向性判断。完整网格、成本与统计检验用于解释各规则的表现及其差异。
 
 ## 1. 与原文逐项比较
 
@@ -171,13 +172,16 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
 进一步研究可优先考虑两项：取得原文相同的3M现金数据及更详细的持仓实现说明，量化各口径对差距的贡献；把同一研究问题扩展到含分红的可交易ETF，结合开盘成交数据重新评估费用和可执行性。每次扩展保留一个明确的问题和固定实验设定，方便解释新增证据。
 
-完整方法与运行命令见[复现流程](../docs/复现流程.md)，原始数值见[grid_results.csv](grid_results.csv)，实际运行版本及自检记录见[summary.json](summary.json)。
+完整方法、数据来源和运行命令见仓库README。运行脚本后，原始数值保存在本地outputs/grid_results.csv，实际运行版本及自检记录保存在outputs/summary.json。
 '''
-(out / '复现结果.md').write_text(report, encoding='utf-8')
 body = markdown.markdown(report, extensions=['tables', 'fenced_code'])
+for figure in (out / 'figures').glob('*.png'):
+    encoded = base64.b64encode(figure.read_bytes()).decode('ascii')
+    body = body.replace(f'src="figures/{figure.name}"', f'src="data:image/png;base64,{encoded}"')
 css = '''body{max-width:1080px;margin:44px auto;padding:0 24px 80px;background:#f7f9fb;color:#243344;font:16px/1.85 system-ui,"Microsoft YaHei",sans-serif}h1{font-size:32px;color:#153c50;line-height:1.4}h2{margin-top:42px;padding-top:16px;border-top:1px solid #d8e3ea;color:#153c50;font-size:24px}p{margin:16px 0}a{color:#126b91}table{border-collapse:collapse;width:100%;background:white;font-size:14px;line-height:1.6}th,td{border:1px solid #d9e2e8;padding:9px 12px;text-align:left}th{background:#e8f0f5}img{display:block;max-width:100%;height:auto;margin:24px auto;border-radius:8px;background:white}code{background:#e8eef2;padding:2px 5px;border-radius:4px}strong{color:#124e68}@media print{body{max-width:none;margin:0;background:white;font-size:11pt}img,table{break-inside:avoid}h2{break-after:avoid}}'''
-(out / '复现结果.html').write_text(f'<!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AQR抄底策略公开数据复现</title><style>{css}</style><body>{body}</body></html>', encoding='utf-8')
-print('Generated result reports and example trade ledger.')
+(ROOT / 'REPORT.html').write_text(f'<!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AQR抄底策略公开数据复现</title><style>{css}</style><body>{body}</body></html>', encoding='utf-8')
+print('Generated REPORT.html with embedded figures and local example trade ledger.')
 print(trades.head().to_string(index=False))
+
 
 
