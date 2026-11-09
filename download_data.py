@@ -12,6 +12,7 @@ start = int(datetime(1963, 1, 1, tzinfo=timezone.utc).timestamp())
 end = int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp())
 urls = {
     'gspc_daily.json': f'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?period1={start}&period2={end}&interval=1d',
+    'aqr_original.pdf': 'https://www.aqr.com/-/media/AQR/Documents/Alternative-Thinking/AQR-Alternative-Thinking---Hold-the-Dip.pdf?sc_lang=en',
     'ff_daily.zip': 'https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip',
 }
 raw = ROOT / 'data/raw'
@@ -30,6 +31,9 @@ for name, url in urls.items():
         result = json.loads(content)['chart']
         if result.get('error') or not result.get('result'):
             raise ValueError('Yahoo returned no price data')
+    elif name.endswith('.pdf'):
+        if not content.startswith(b'%PDF-'):
+            raise ValueError('AQR download is not a PDF file')
     elif not content.startswith(b'PK'):
         raise ValueError('French download is not a ZIP file')
     target.write_bytes(content)

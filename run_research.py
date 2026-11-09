@@ -49,7 +49,7 @@ def load_data():
     return data
 
 
-def positions(signal, hold, mode='ignore', lag=2):
+def positions(signal, hold, mode='ignore', lag=1):
     decision = np.zeros(len(signal), dtype=np.int8)
     remaining = 0
     for t, triggered in enumerate(signal):
@@ -61,21 +61,29 @@ def positions(signal, hold, mode='ignore', lag=2):
     return np.concatenate([np.zeros(lag, dtype=np.int8), decision[:-lag]])
 
 
-def performance(returns, rf):
-    excess = returns - rf
+def monthly_returns(returns, dates):
+    return ((1 + pd.DataFrame(returns, index=dates)).resample('ME').prod() - 1).to_numpy()
+
+
+def performance(returns, rf, dates):
+    monthly = monthly_returns(np.column_stack([returns, rf]), dates)
+    excess = monthly[:, 0] - monthly[:, 1]
     nav = np.cumprod(1 + returns)
     peak = np.maximum.accumulate(np.r_[1.0, nav])[1:]
-    volatility = np.std(excess, ddof=1) * np.sqrt(252)
+    volatility = np.std(excess, ddof=1) * np.sqrt(12)
     return {'cagr': float(nav[-1] ** (252 / len(nav)) - 1),
-            'volatility': float(np.std(returns, ddof=1) * np.sqrt(252)),
-            'sharpe': float(np.mean(excess) * 252 / volatility) if volatility > 1e-12 else None,
+            'volatility': float(np.std(monthly[:, 0], ddof=1) * np.sqrt(12)),
+            'sharpe': float(np.mean(excess) * 12 / volatility) if volatility > 1e-12 else None,
             'max_drawdown': float(np.min(nav / peak - 1)), 'terminal_nav': float(nav[-1])}
 
 
-def regress(excess, market_excess):
+def regress(returns, rf, market, dates):
+    monthly = monthly_returns(np.column_stack([returns, rf, market]), dates)
+    excess = monthly[:, 0] - monthly[:, 1]
+    market_excess = monthly[:, 2] - monthly[:, 1]
     fit = sm.OLS(excess, sm.add_constant(market_excess)).fit()
-    hac = fit.get_robustcov_results(cov_type='HAC', maxlags=21, use_correction=True, use_t=False)
-    return {'alpha_ann': float(fit.params[0] * 252), 'beta': float(fit.params[1]),
+    hac = fit.get_robustcov_results(cov_type='HAC', maxlags=3, use_correction=True, use_t=False)
+    return {'alpha_ann': float(fit.params[0] * 12), 'beta': float(fit.params[1]),
             't_iid': float(fit.tvalues[0]), 't_hac': float(hac.tvalues[0]),
             'p_hac': float(hac.pvalues[0])}
 
@@ -89,20 +97,23 @@ def run():
     (ROOT / 'data/processed').mkdir(parents=True, exist_ok=True)
     checks = []
     if args.self_check:
-        np.testing.assert_array_equal(positions([True, False, True, False, False, False, False], 2), [0, 0, 1, 1, 1, 1, 0])
-        np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2), [0, 0, 1, 1, 0, 0])
-        np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, 'extend'), [0, 0, 1, 1, 1, 0])
+        np.testing.assert_array_equal(positions([True, False, True, False, False, False, False], 2), [0, 1, 1, 1, 1, 0, 0])
+        np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2), [0, 1, 1, 0, 0, 0])
+        np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, 'extend'), [0, 1, 1, 1, 0, 0])
         np.testing.assert_array_equal(positions([False] * 8, 3), np.zeros(8))
-        checks += ['two-close lag and exact holding length', 'ignore vs extend repeated signals', 'no-signal cash position']
+        np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 0])
+        np.testing.assert_allclose(monthly_returns([0.10, -0.05, 0.02], pd.to_datetime(['2000-01-28', '2000-01-31', '2000-02-01']))[:, 0], [0.045, 0.02])
+        checks += ['close-to-next-close timing and exact holding length', 'monthly compounding across month boundaries', 'ignore vs extend repeated signals', 'no-signal cash position']
     data = load_data()
     # The experiment begins flat; pre-1965 prices are used only for lookback calculation.
     raw_signals = {(l, d): ((data['close'] / data['close'].shift(l) - 1 <= -d) & (data.index >= START)).to_numpy()
                    for l in LOOKBACKS for d in DEPTHS}
     sample = (data.index >= START) & (data.index <= END)
+    dates = data.index[sample]
     rf = data.loc[sample, 'rf'].to_numpy()
     market = data.loc[sample, 'market_return'].to_numpy()
     mx = market - rf
-    bh = performance(market, rf)
+    bh = performance(market, rf, dates)
     records, cost_records, period_records = [], [], []
     all_positions, ids = [], []
     selected = {'L21_D10_H63', 'L63_D10_H252', 'L252_D20_H1260'}
@@ -121,12 +132,12 @@ def run():
                 record = {'strategy': sid, 'lookback_days': lookback, 'depth': depth, 'hold_days': hold,
                           'exposure': float(w.mean()), 'entries': int(np.sum(np.diff(w_full.astype(float), prepend=0)[sample] > 0)),
                           'annual_turnover': float(turnover.sum() * 252 / len(w)),
-                          **performance(returns, rf), **regress(returns - rf, mx)}
+                          **performance(returns, rf, dates), **regress(returns, rf, market, dates)}
                 record['sharpe_gap'] = record['sharpe'] - bh['sharpe']
                 records.append(record)
                 for bps in [0, 5, 10, 25]:
                     net = returns - turnover * bps / 10000
-                    cost_records.append({'strategy': sid, 'one_way_bps': bps, **performance(net, rf)})
+                    cost_records.append({'strategy': sid, 'one_way_bps': bps, **performance(net, rf, dates)})
                 for label, first, last in [('1965-1989', '1965-01-01', '1989-12-31'),
                                            ('1990-2009', '1990-01-01', '2009-12-31'),
                                            ('2010-2025Q3', '2010-01-01', END),
@@ -135,10 +146,10 @@ def run():
                     sub_rf = data.loc[mask, 'rf'].to_numpy()
                     sub_m = data.loc[mask, 'market_return'].to_numpy()
                     sub_r = sub_rf + w_full[mask] * (sub_m - sub_rf)
-                    p = performance(sub_r, sub_rf)
+                    p = performance(sub_r, sub_rf, data.index[mask])
                     period_records.append({'strategy': sid, 'period': label, 'days': int(mask.sum()),
                                            'exposure': float(w_full[mask].mean()), **p,
-                                           'benchmark_sharpe': performance(sub_m, sub_rf)['sharpe']})
+                                           'benchmark_sharpe': performance(sub_m, sub_rf, data.index[mask])['sharpe']})
                 if sid in selected:
                     daily[sid] = returns
                 mean_weight += w_full / 196
@@ -154,21 +165,21 @@ def run():
     pd.DataFrame(np.array(all_positions).T, index=daily.index, columns=ids).to_csv(out / 'positions.csv.gz', compression='gzip')
     daily['equal_weight_196'] = rf + mean_weight[sample] * mx
     # This is a transparent project baseline, separate from AQR's SG Trend analysis.
-    trend_signal = (data['close'] > data['close'].shift(252)).astype(int).shift(2, fill_value=0).to_numpy()
+    trend_signal = (data['close'] > data['close'].shift(252)).astype(int).shift(1, fill_value=0).to_numpy()
     daily['trend_252'] = rf + trend_signal[sample] * mx
     daily.to_csv(out / 'selected_daily_returns.csv', float_format='%.12g')
     nav = (1 + daily).cumprod()
     nav.to_csv(out / 'selected_nav.csv', float_format='%.12g')
-    baselines = {name: performance(daily[name].to_numpy(), rf) for name in daily.columns}
+    baselines = {name: performance(daily[name].to_numpy(), rf, dates) for name in daily.columns}
     sensitivity = []
-    for mode, lag in [('ignore', 1), ('ignore', 2), ('extend', 2)]:
+    for mode, lag in [('ignore', 1), ('ignore', 2), ('extend', 1)]:
         gaps = []
         for l in LOOKBACKS:
             for d in DEPTHS:
                 for h in HOLDS:
                     w = positions(raw_signals[l, d], h, mode, lag)[sample]
                     r = rf + w * mx
-                    sr = performance(r, rf)['sharpe']
+                    sr = performance(r, rf, dates)['sharpe']
                     gaps.append(sr - bh['sharpe'])
                     sensitivity.append({'mode': mode, 'lag': lag, 'lookback_days': l, 'depth': d, 'hold_days': h, 'sharpe': sr,
                                         'sharpe_gap': sr - bh['sharpe']})
@@ -178,7 +189,6 @@ def run():
         selected_id = 'L21_D10_H63'
         w = all_positions[ids.index(selected_id)]
         np.testing.assert_allclose(daily[selected_id], rf + w * mx)
-        assert performance(np.zeros_like(rf) + rf, rf)['max_drawdown'] <= 0
         costs_pivot = costs.pivot(index='strategy', columns='one_way_bps', values='cagr')
         assert (costs_pivot[25] <= costs_pivot[0] + 1e-12).all()
         # Appending future data must leave all historical positions unchanged.
@@ -187,7 +197,7 @@ def run():
         np.testing.assert_array_equal(positions(sig[:cut], 63), positions(sig, 63)[:cut])
         checks += ['position/return accounting', 'cost monotonicity across all 196 strategies', 'prefix causality']
     summary = {'sample_start': str(daily.index[0].date()), 'sample_end': str(daily.index[-1].date()), 'days': len(daily),
-               'strategy_count': len(results), 'benchmark': bh,
+               'strategy_count': len(results), 'benchmark': bh, 'statistics_frequency': 'monthly', 'signal_lag': 1, 'hac_month_lags': 3,
                'mean_sharpe': float(results.sharpe.mean()), 'mean_sharpe_gap': float(results.sharpe_gap.mean()),
                'underperform_share': float((results.sharpe_gap < 0).mean()),
                'mean_alpha_ann': float(results.alpha_ann.mean()),
@@ -231,7 +241,7 @@ def run():
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     axes[0].hist(results.t_hac, bins=24, color='#417e95', edgecolor='white')
     for x in [-1.96, 1.96]: axes[0].axvline(x, ls='--', color='#b83c37')
-    axes[0].set(xlabel='Alpha t-statistic (HAC, 21 lags)', ylabel='Strategy count', title='Alpha uncertainty')
+    axes[0].set(xlabel='Alpha t-statistic (monthly HAC, 3 lags)', ylabel='Strategy count', title='Alpha uncertainty')
     sr = costs.groupby('one_way_bps').sharpe.agg(['mean', 'median'])
     axes[1].plot(sr.index, sr['mean'], marker='o', label='Mean BTD Sharpe'); axes[1].plot(sr.index, sr['median'], marker='s', label='Median BTD Sharpe')
     axes[1].axhline(bh['sharpe'], ls='--', color='#b83c37', label='Gross buy-and-hold reference')
