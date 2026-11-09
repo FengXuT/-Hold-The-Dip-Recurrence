@@ -50,15 +50,16 @@ def load_data():
 
 
 def positions(signal, hold, mode='ignore', lag=1):
-    decision = np.zeros(len(signal), dtype=np.int8)
-    remaining = 0
-    for t, triggered in enumerate(signal):
-        if triggered and (remaining == 0 or mode == 'extend'):
-            remaining = hold
-        if remaining > 0:
-            decision[t] = 1
-            remaining -= 1
-    return np.concatenate([np.zeros(lag, dtype=np.int8), decision[:-lag]])
+    weight = np.zeros(len(signal), dtype=np.int8)
+    exit_close = -1
+    for t in np.flatnonzero(signal):
+        if mode == 'ignore' and t < exit_close:
+            continue
+        first_return = t + lag
+        exit_close = first_return + hold - 1
+        # A signal at the exit close may schedule the next holding cycle.
+        weight[first_return:exit_close + 1] = 1
+    return weight
 
 
 def monthly_returns(returns, dates):
@@ -102,8 +103,10 @@ def run():
         np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, 'extend'), [0, 1, 1, 1, 0, 0])
         np.testing.assert_array_equal(positions([False] * 8, 3), np.zeros(8))
         np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 0])
+        np.testing.assert_array_equal(positions([True, False, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 0, 0])
+        np.testing.assert_array_equal(positions([True, False, False, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 1, 1, 0])
         np.testing.assert_allclose(monthly_returns([0.10, -0.05, 0.02], pd.to_datetime(['2000-01-28', '2000-01-31', '2000-02-01']))[:, 0], [0.045, 0.02])
-        checks += ['close-to-next-close timing and exact holding length', 'monthly compounding across month boundaries', 'ignore vs extend repeated signals', 'no-signal cash position']
+        checks += ['close-to-next-close timing and exact holding length', 'delayed entry ignores signals until actual exit close', 'monthly compounding across month boundaries', 'ignore vs extend repeated signals', 'no-signal cash position']
     data = load_data()
     # The experiment begins flat; pre-1965 prices are used only for lookback calculation.
     raw_signals = {(l, d): ((data['close'] / data['close'].shift(l) - 1 <= -d) & (data.index >= START)).to_numpy()

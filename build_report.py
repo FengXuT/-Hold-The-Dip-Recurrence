@@ -26,6 +26,20 @@ def table(headers, rows):
                      ['| ' + ' | '.join(str(value) for value in row) + ' |' for row in rows])
 
 
+benchmark_rows = []
+benchmark_names = {'benchmark_sharpe': '买入持有夏普', 'underperform_share': '落后规则比例',
+                   'mean_sharpe_gap': '平均夏普差'}
+for item in comparison['benchmark_metrics']:
+    if item['metric'] == 'underperform_share':
+        original, reproduced = f"约{item['paper']:.0%}", f"{item['reproduced']:.1%}"
+        difference = f"{item['difference'] * 100:+.1f}个百分点"
+    else:
+        original, reproduced = f"{item['paper']:.3f}", f"{item['reproduced']:.3f}"
+        difference = f"{item['difference']:+.3f}"
+    benchmark_rows.append([benchmark_names[item['metric']], original, reproduced, difference])
+benchmark_table = table(['相对表现指标', '原图提取值', '本次复现', '差值'], benchmark_rows)
+alignment_status = '参数曲线及基准均达到对齐阈值' if comparison['full_replication_aligned'] else '参数曲线形态接近，基准及相对表现仍待对齐'
+
 baseline_rows = []
 names = {'buy_hold':'买入持有', 'cash':'现金', 'L21_D10_H63':'回看1月/跌10%/持有3月',
          'L63_D10_H252':'回看3月/跌10%/持有1年', 'L252_D20_H1260':'回看1年/跌20%/持有5年',
@@ -47,10 +61,19 @@ cost_table = table(['单边成本/bps', '196组平均夏普', '196组平均年�
 period_rows = []
 for label in ['1965-1989', '1990-2009', '2010-2025Q3', 'after_publication']:
     values = periods.loc[periods.period == label]
+    valid = values.loc[values.sharpe.notna()]
+    if valid.empty:
+        mean_sharpe, underperform = '—', '—'
+    else:
+        losers = int((valid.sharpe < valid.benchmark_sharpe).sum())
+        mean_sharpe = f'{valid.sharpe.mean():.3f}'
+        underperform = f'{losers}/{len(valid)} ({losers / len(valid):.1%})'
     period_rows.append(['发布后观察' if label == 'after_publication' else label, int(values.days.iloc[0]),
-                        f'{values.sharpe.mean():.3f}', f'{values.benchmark_sharpe.iloc[0]:.3f}',
-                        f'{(values.sharpe < values.benchmark_sharpe).mean():.1%}', f'{values.exposure.mean():.1%}'])
-period_table = table(['阶段', '交易日数', '196组平均夏普', '买入持有夏普', '落后比例', '平均股票仓位'], period_rows)
+                        f'{len(valid)}/{len(values)}', int((values.exposure == 0).sum()), mean_sharpe,
+                        f'{values.benchmark_sharpe.iloc[0]:.3f}', underperform, f'{values.exposure.mean():.1%}'])
+period_table = table(['阶段', '交易日数', '有效夏普/总规则', '全程现金组数', '有效规则平均夏普',
+                      '买入持有夏普', '有效规则落后数/比例', '全196组平均仓位'], period_rows)
+published = periods.loc[periods.period == 'after_publication']
 
 sid = 'L21_D10_H63'
 trigger = (market['close'] / market['close'].shift(21) - 1 <= -0.10)
@@ -86,7 +109,7 @@ trade_preview = table(['信号日', '信号收盘买入', '首个股票收益日
 
 report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
-更新日期：2026-11-09。主样本为 **{summary['sample_start']} 至 {summary['sample_end']}，共 {summary['days']:,} 个交易日**。
+更新日期：2026-11-10。主样本为 **{summary['sample_start']} 至 {summary['sample_end']}，共 {summary['days']:,} 个交易日**。
 
 ## 先看结论
 
@@ -108,6 +131,12 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 | 年化alpha/百分点 | {prior.loc['alpha_ann', 'correlation']:.4f} | {aligned.loc['alpha_ann', 'correlation']:.4f} | {prior.loc['alpha_ann', 'rmse'] * 100:.4f} | {aligned.loc['alpha_ann', 'rmse'] * 100:.4f} |
 | OLS t值 | {prior.loc['t_iid', 'correlation']:.4f} | {aligned.loc['t_iid', 'correlation']:.4f} | {prior.loc['t_iid', 'rmse']:.4f} | {aligned.loc['t_iid', 'rmse']:.4f} |
 
+**当前对齐状态：{alignment_status}。**
+
+{benchmark_table}
+
+原图与本次结果分别按各自的买入持有基准计算落后比例；此项和基准夏普单独纳入对照检查，原图比例按图形读数近似呈现。
+
 主要修正是收益统计频率和成交近似：保留原先的固定交易日网格与忽略重复信号规则，将每日收益按月份复利为`月收益=prod(1+日收益)-1`，随后进行月频夏普计算及市场回归。回归截距乘12得到年化alpha。主复现从信号后下一段收盘收益计入仓位；下一日收盘成交另作敏感性分析。
 
 只修正成交近似、仍用日频统计时，平均年化alpha为{curve_metrics.loc[(curve_metrics.case == 'daily_lag1') & (curve_metrics.metric == 'alpha_ann'), 'reproduced_mean'].iloc[0]:.3%}；进一步使用月频后为{summary['mean_alpha_ann']:.3%}。这说明月频聚合解释了主要的alpha水平差距。日历月与持仓展期也作过诊断比较；最终保留与原图更吻合的固定交易日和忽略重复信号设定。
@@ -128,7 +157,7 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 | 月频HAC(3)的p值小于0.05 | 原文未明确此口径 | {summary['hac_significant_count']}组 |
 | Holm校正后p值小于0.05 | 本项目新增评价 | {summary['holm_significant_count']}组 |
 
-**复现程度：196组参数的夏普、alpha与t值曲线形态已基本吻合，夏普水平仍有偏差。** 本次使用Yahoo价格、French 1M现金收益、固定交易日周期、信号收盘成交近似及月频统计。原文使用Bloomberg价格及3M现金基准，并未明确给出统计频率与全部执行细节；月频设定由逐参数对照提供支持。剩余差异保留在指标表和叠加图中。
+**复现程度：{alignment_status}。** 本次使用Yahoo价格、French 1M现金收益、固定交易日周期、信号收盘成交近似及月频统计。原文使用Bloomberg价格及3M现金基准，并未明确给出统计频率与全部执行细节；月频设定由逐参数对照提供支持。剩余差异保留在指标表和叠加图中。
 
 ## 2. 收益、风险与仓位一起看
 
@@ -178,9 +207,9 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
 {period_table}
 
-历史分段沿用原有仓位。阶段差异说明择时规则受市场路径影响，适合结合特定时期的波动和持仓记录继续分析。
+历史分段沿用原有仓位。平均夏普和落后比例统一在夏普有效的规则中计算，表中列出有效规则数量及全程现金组数；平均股票仓位覆盖全部196组。
 
-发布后窗口是**2025-12-02至2026-09-30**，共{int(periods.loc[periods.period == 'after_publication', 'days'].iloc[0])}个交易日。该窗口展示固定规则在文章发布后的表现，报告同时呈现仓位和完整网格分布。窗口中的规则表现优劣以当前观察为范围，后续可按相同设定持续更新。
+发布后窗口是**2025-12-02至2026-09-30**，共{int(periods.loc[periods.period == 'after_publication', 'days'].iloc[0])}个交易日。该窗口有{int(published.sharpe.notna().sum())}组规则具有有效夏普，另有{int((published.exposure == 0).sum())}组全程持有现金。平均夏普与落后比例使用前者作为分母。窗口中的规则表现优劣以当前观察为范围，后续可按相同设定持续更新。
 
 ## 7. 看一笔交易，核对时间线
 

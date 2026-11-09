@@ -35,6 +35,7 @@ for metric, page, zero, scale in [('sharpe', 5, 564.0, (676.70 - 541.44) / 0.6),
     reference[metric] = [value for _, value in sorted(bars)]
 reference.to_csv(OUT / 'paper_reference.csv', index=False)
 current = pd.read_csv(OUT / 'grid_results.csv')
+research = json.loads((OUT / 'summary.json').read_text(encoding='utf-8'))
 market = pd.read_csv(ROOT / 'data/processed/market_daily.csv', index_col=0, parse_dates=True)
 mask = (market.index >= '1965-01-01') & (market.index <= '2025-09-30')
 mx = market.loc[mask, 'market_excess'].to_numpy()
@@ -44,8 +45,11 @@ legacy = {1: [], 2: []}
 for row in current.itertuples():
     signal = ((market.close / market.close.shift(row.lookback_days) - 1 <= -row.depth)
               & (market.index >= '1965-01-01')).to_numpy()
+    original_weight = positions(signal, row.hold_days, lag=1)
     for lag in [1, 2]:
-        excess = positions(signal, row.hold_days, lag=lag)[mask] * mx
+        # Preserve the old shifted timeline solely for the historical-version overlay.
+        historical_weight = original_weight if lag == 1 else np.r_[0, original_weight[:-1]]
+        excess = historical_weight[mask] * mx
         coefficients = np.linalg.lstsq(X, excess, rcond=None)[0]
         residual = excess - X @ coefficients
         se = np.sqrt((residual @ residual) / (len(mx) - 2) * intercept_variance_scale)
@@ -66,16 +70,36 @@ for name, values in cases.items():
 comparison = pd.DataFrame(comparison)
 comparison.to_csv(OUT / 'paper_comparison.csv', index=False)
 checked = comparison.loc[comparison.case == 'corrected_monthly_lag1'].set_index('metric')
+curve_shape_aligned = bool((checked.correlation > 0.98).all()
+                           and checked.loc['sharpe', 'rmse'] < 0.03
+                           and checked.loc['alpha_ann', 'rmse'] < 0.001
+                           and checked.loc['t_iid', 'rmse'] < 0.15)
+paper_benchmark = (610.44 - 564.0) / ((676.70 - 541.44) / 0.6)
+benchmark_rows = []
+for metric, paper_value, reproduced, tolerance in [
+        ('benchmark_sharpe', paper_benchmark, research['benchmark']['sharpe'], 0.01),
+        ('underperform_share', float((reference.sharpe < paper_benchmark - 1e-12).mean()),
+         float((current.sharpe < research['benchmark']['sharpe']).mean()), 0.05),
+        ('mean_sharpe_gap', float(reference.sharpe.mean() - paper_benchmark),
+         research['mean_sharpe_gap'], 0.01)]:
+    difference = reproduced - paper_value
+    benchmark_rows.append({'metric': metric, 'paper': paper_value, 'reproduced': reproduced,
+                           'difference': difference, 'tolerance': tolerance,
+                           'aligned': abs(difference) <= tolerance})
+benchmark_aligned = all(row['aligned'] for row in benchmark_rows)
 if args.self_check:
-    assert (checked.correlation > 0.98).all(), 'Curve shape still differs materially'
-    assert checked.loc['sharpe', 'rmse'] < 0.03
-    assert checked.loc['alpha_ann', 'rmse'] < 0.001
-    assert checked.loc['t_iid', 'rmse'] < 0.15
+    assert curve_shape_aligned, 'Curve shape still differs materially'
+    assert all(np.isfinite(row['difference']) for row in benchmark_rows)
+    assert len(current) == len(reference) == 196
 summary = {'metrics': comparison.to_dict(orient='records'),
            'paper_figure_benchmark_sharpe': (610.44 - 564.0) / ((676.70 - 541.44) / 0.6),
            'paper_figure_mean_sharpe_gap': float(reference.sharpe.mean() - (610.44 - 564.0) / ((676.70 - 541.44) / 0.6)),
            'paper_figure_iid_significant_count': int((reference.t_iid.abs() > 1.96).sum()),
-           'self_check_passed': bool(args.self_check),
+           'self_check_executed': bool(args.self_check),
+           'curve_shape_aligned': curve_shape_aligned,
+           'benchmark_aligned': benchmark_aligned,
+           'full_replication_aligned': curve_shape_aligned and benchmark_aligned,
+           'benchmark_metrics': benchmark_rows,
            'source': 'AQR Hold the Dip, PDF pages 6-8; vector bars calibrated to printed axes'}
 (OUT / 'paper_comparison.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
 plt.rcParams.update({'font.size': 10, 'axes.spines.top': False, 'axes.spines.right': False})
@@ -91,11 +115,16 @@ for ax, metric, title, multiplier in zip(axes, ['sharpe', 'alpha_ann', 't_iid'],
     ax.set_ylabel(title)
     ax.grid(axis='y', alpha=0.15)
     ax.set_title(f"{title}: corrected correlation {checked.loc[metric, 'correlation']:.4f}", loc='left')
-axes[0].legend(fontsize=8, ncol=3, loc='upper left', bbox_to_anchor=(0, 1.30))
+axes[0].axhline(paper_benchmark, color='#398652', ls=':', lw=1.2, label='AQR passive benchmark')
+axes[0].axhline(research['benchmark']['sharpe'], color='#b83c37', ls=':', lw=1.2, label='Reproduced passive benchmark')
+axes[0].legend(fontsize=7.5, ncol=3, loc='upper left', bbox_to_anchor=(0, 1.38))
 axes[-1].set_xlabel('196 rules in AQR order: lookback, dip depth, holding period')
 fig.tight_layout(h_pad=1.3)
 fig.savefig(OUT / 'figures/05_paper_overlay.png', dpi=170, bbox_inches='tight')
 plt.close(fig)
 print(comparison.to_string(index=False))
 print('PDF reference t-statistics exceeding 1.96:', summary['paper_figure_iid_significant_count'])
-print('Curve checks:', 'passed' if args.self_check else 'not requested')
+print('Curve shape aligned:', curve_shape_aligned)
+print('Benchmark aligned:', benchmark_aligned)
+print('Full replication aligned:', summary['full_replication_aligned'])
+print(pd.DataFrame(benchmark_rows).to_string(index=False))
