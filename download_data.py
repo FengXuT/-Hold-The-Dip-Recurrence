@@ -13,6 +13,8 @@ end = int(datetime(2026, 10, 1, tzinfo=timezone.utc).timestamp())
 urls = {
     'gspc_daily.json': f'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?period1={start}&period2={end}&interval=1d',
     'aqr_original.pdf': 'https://www.aqr.com/-/media/AQR/Documents/Alternative-Thinking/AQR-Alternative-Thinking---Hold-the-Dip.pdf?sc_lang=en',
+    'irx_daily.json': f'https://query1.finance.yahoo.com/v8/finance/chart/%5EIRX?period1={start}&period2={end}&interval=1d',
+    'ff_monthly.zip': 'https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip',
     'ff_daily.zip': 'https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip',
 }
 raw = ROOT / 'data/raw'

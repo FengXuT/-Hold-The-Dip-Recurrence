@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pypdf import PdfReader
-from run_research import positions
+from run_research import positions, performance, regress
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / 'outputs'
@@ -38,14 +38,21 @@ current = pd.read_csv(OUT / 'grid_results.csv')
 research = json.loads((OUT / 'summary.json').read_text(encoding='utf-8'))
 market = pd.read_csv(ROOT / 'data/processed/market_daily.csv', index_col=0, parse_dates=True)
 mask = (market.index >= '1965-01-01') & (market.index <= '2025-09-30')
-mx = market.loc[mask, 'market_excess'].to_numpy()
+old_rf = market.loc[mask, 'rf_french'].to_numpy()
+market_return = market.loc[mask, 'market_return'].to_numpy()
+mx = market_return - old_rf
+dates = market.index[mask]
 X = np.column_stack([np.ones(len(mx)), mx])
 intercept_variance_scale = np.linalg.inv(X.T @ X)[0, 0]
 legacy = {1: [], 2: []}
+previous_monthly = []
 for row in current.itertuples():
     signal = ((market.close / market.close.shift(row.lookback_days) - 1 <= -row.depth)
               & (market.index >= '1965-01-01')).to_numpy()
     original_weight = positions(signal, row.hold_days, lag=1)
+    old_return = old_rf + original_weight[mask] * mx
+    previous_monthly.append({**performance(old_return, old_rf, dates),
+                             **regress(old_return, old_rf, market_return, dates)})
     for lag in [1, 2]:
         # Preserve the old shifted timeline solely for the historical-version overlay.
         historical_weight = original_weight if lag == 1 else np.r_[0, original_weight[:-1]]
@@ -56,7 +63,9 @@ for row in current.itertuples():
         legacy[lag].append({'sharpe': excess.mean() / excess.std(ddof=1) * np.sqrt(252),
                             'alpha_ann': coefficients[0] * 252, 't_iid': coefficients[0] / se})
 cases = {'prior_daily_lag2': pd.DataFrame(legacy[2]),
-         'daily_lag1': pd.DataFrame(legacy[1]), 'corrected_monthly_lag1': current}
+         'daily_lag1': pd.DataFrame(legacy[1]),
+         'previous_monthly_french_lag1': pd.DataFrame(previous_monthly),
+         'corrected_monthly_lag1': current}
 comparison = []
 for name, values in cases.items():
     for metric in ['sharpe', 'alpha_ann', 't_iid']:
@@ -108,10 +117,12 @@ for ax, metric, title, multiplier in zip(axes, ['sharpe', 'alpha_ann', 't_iid'],
                                         ['Sharpe ratio', 'Annual alpha (%)', 'Alpha OLS t-statistic'], [1, 100, 1]):
     ax.plot(np.arange(196), cases['prior_daily_lag2'][metric] * multiplier,
             color='#d79246', lw=0.9, alpha=0.6, label='Prior: daily statistics, lag 2')
+    ax.plot(np.arange(196), cases['previous_monthly_french_lag1'][metric] * multiplier,
+            color='#9767a7', lw=0.7, alpha=0.6, label='Previous: monthly, French 1M cash')
     ax.plot(np.arange(196), reference[metric] * multiplier,
             color='#263c4a', lw=1.5, label='AQR figure: digitized vector bars')
     ax.plot(np.arange(196), current[metric] * multiplier,
-            color='#168da7', lw=1, ls='--', label='Corrected: monthly statistics, lag 1')
+            color='#168da7', lw=1, ls='--', label='Current: monthly, 3M bill cash proxy')
     ax.set_ylabel(title)
     ax.grid(axis='y', alpha=0.15)
     ax.set_title(f"{title}: corrected correlation {checked.loc[metric, 'correlation']:.4f}", loc='left')

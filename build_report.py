@@ -13,6 +13,8 @@ comparison = json.loads((out / 'paper_comparison.json').read_text(encoding='utf-
 curve_metrics = pd.DataFrame(comparison['metrics'])
 aligned = curve_metrics.loc[curve_metrics.case == 'corrected_monthly_lag1'].set_index('metric')
 prior = curve_metrics.loc[curve_metrics.case == 'prior_daily_lag2'].set_index('metric')
+previous = curve_metrics.loc[curve_metrics.case == 'previous_monthly_french_lag1'].set_index('metric')
+audit = json.loads((out / 'baseline_audit.json').read_text(encoding='utf-8'))
 cost = pd.read_csv(out / 'cost_sensitivity.csv')
 implementation = pd.read_csv(out / 'implementation_sensitivity.csv')
 periods = pd.read_csv(out / 'period_results.csv')
@@ -39,6 +41,17 @@ for item in comparison['benchmark_metrics']:
     benchmark_rows.append([benchmark_names[item['metric']], original, reproduced, difference])
 benchmark_table = table(['相对表现指标', '原图提取值', '本次复现', '差值'], benchmark_rows)
 alignment_status = '参数曲线及基准均达到对齐阈值' if comparison['full_replication_aligned'] else '参数曲线形态接近，基准及相对表现仍待对齐'
+
+cash_names = {'french_daily': '原French日频现金', 'french_monthly': 'French官方月度现金',
+              'bill_3m_proxy': '本次3个月月末滚动估计'}
+cash_rows = [[cash_names[item['method']], f"{item['annual_mean_cash_return']:.3%}",
+              f"{item['benchmark_sharpe']:.4f}", f"{item['difference_to_figure']:+.4f}"]
+             for item in audit['cash_methods']]
+cash_table = table(['现金口径', '年化平均现金收益', '买入持有夏普', '相对原图基准差值'], cash_rows)
+frequency_names = {'D': '日频', 'W-FRI': '周频', 'ME': '月频', 'QE': '季频', 'YE': '年频'}
+frequency_table = table(['统计频率', '观察数', '最后完整周期', '被动夏普'],
+                        [[frequency_names[item['frequency']], item['observations'], item['last_period_end'], f"{item['benchmark_sharpe']:.4f}"]
+                         for item in audit['frequency_methods']])
 
 baseline_rows = []
 names = {'buy_hold':'买入持有', 'cash':'现金', 'L21_D10_H63':'回看1月/跌10%/持有3月',
@@ -113,23 +126,23 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
 ## 先看结论
 
-使用公开的标普500价格与现金利率，本次196组抄底规则的平均夏普为 **{summary['mean_sharpe']:.3f}**，买入持有为 **{summary['benchmark']['sharpe']:.3f}**；**{int((grid.sharpe_gap < 0).sum())}/196组（{summary['underperform_share']:.1%}）**落后。平均年化alpha为 **{summary['mean_alpha_ann']:.3%}**。HAC口径下有{summary['hac_significant_count']}组通过5%单项检验，经Holm多重检验校正后为{summary['holm_significant_count']}组。
+使用公开的标普500价格与3个月国债报价，本次196组抄底规则的平均夏普为 **{summary['mean_sharpe']:.3f}**，买入持有为 **{summary['benchmark']['sharpe']:.3f}**；**{int((grid.sharpe_gap < 0).sum())}/196组（{summary['underperform_share']:.1%}）**落后。平均年化alpha为 **{summary['mean_alpha_ann']:.3%}**。HAC口径下有{summary['hac_significant_count']}组通过5%单项检验，经Holm多重检验校正后为{summary['holm_significant_count']}组。
 
 这组实验支持“抄底规则整体难以改善风险调整后表现”的方向性判断。完整网格、成本与统计检验用于解释各规则的表现及其差异。
 
 ## 0. 与原图逐参数对照
 
-下面按照原文的回看期、跌幅和持有期顺序，对照全部196组规则。参考值来自原文PDF第6—8页的矢量柱高，使用坐标轴刻度换算；它们具有图形读数精度。橙线为修改前，深色线为原图参考值，蓝色虚线为修正后。
+下面按照原文的回看期、跌幅和持有期顺序，对照全部196组规则。参考值来自原文PDF第6—8页的矢量柱高，使用坐标轴刻度换算；它们具有图形读数精度。橙线为最初的日频版本，紫线为使用French现金的月频版本，深色线为原图参考值，蓝色虚线为本次3个月现金估计版本。
 
 ![原图与修改前后叠加](figures/05_paper_overlay.png)
 
 图1：夏普、年化alpha和OLS t值的逐参数叠加。每一点对应同一条参数规则。
 
-| 指标 | 修改前相关系数 | 修正后相关系数 | 修改前RMSE | 修正后RMSE |
+| 指标 | 初版日频RMSE | 上版1M现金月频RMSE | 本次3M现金RMSE | 本次相关系数 |
 |---|---|---|---|---|
-| 夏普 | {prior.loc['sharpe', 'correlation']:.4f} | {aligned.loc['sharpe', 'correlation']:.4f} | {prior.loc['sharpe', 'rmse']:.4f} | {aligned.loc['sharpe', 'rmse']:.4f} |
-| 年化alpha/百分点 | {prior.loc['alpha_ann', 'correlation']:.4f} | {aligned.loc['alpha_ann', 'correlation']:.4f} | {prior.loc['alpha_ann', 'rmse'] * 100:.4f} | {aligned.loc['alpha_ann', 'rmse'] * 100:.4f} |
-| OLS t值 | {prior.loc['t_iid', 'correlation']:.4f} | {aligned.loc['t_iid', 'correlation']:.4f} | {prior.loc['t_iid', 'rmse']:.4f} | {aligned.loc['t_iid', 'rmse']:.4f} |
+| 夏普 | {prior.loc['sharpe', 'rmse']:.4f} | {previous.loc['sharpe', 'rmse']:.4f} | {aligned.loc['sharpe', 'rmse']:.4f} | {aligned.loc['sharpe', 'correlation']:.4f} |
+| 年化alpha/百分点 | {prior.loc['alpha_ann', 'rmse'] * 100:.4f} | {previous.loc['alpha_ann', 'rmse'] * 100:.4f} | {aligned.loc['alpha_ann', 'rmse'] * 100:.4f} | {aligned.loc['alpha_ann', 'correlation']:.4f} |
+| OLS t值 | {prior.loc['t_iid', 'rmse']:.4f} | {previous.loc['t_iid', 'rmse']:.4f} | {aligned.loc['t_iid', 'rmse']:.4f} | {aligned.loc['t_iid', 'correlation']:.4f} |
 
 **当前对齐状态：{alignment_status}。**
 
@@ -139,9 +152,29 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 
 主要修正是收益统计频率和成交近似：保留原先的固定交易日网格与忽略重复信号规则，将每日收益按月份复利为`月收益=prod(1+日收益)-1`，随后进行月频夏普计算及市场回归。回归截距乘12得到年化alpha。主复现从信号后下一段收盘收益计入仓位；下一日收盘成交另作敏感性分析。
 
-只修正成交近似、仍用日频统计时，平均年化alpha为{curve_metrics.loc[(curve_metrics.case == 'daily_lag1') & (curve_metrics.metric == 'alpha_ann'), 'reproduced_mean'].iloc[0]:.3%}；进一步使用月频后为{summary['mean_alpha_ann']:.3%}。这说明月频聚合解释了主要的alpha水平差距。日历月与持仓展期也作过诊断比较；最终保留与原图更吻合的固定交易日和忽略重复信号设定。
+只修正成交近似、仍用日频统计时，平均年化alpha为{curve_metrics.loc[(curve_metrics.case == 'daily_lag1') & (curve_metrics.metric == 'alpha_ann'), 'reproduced_mean'].iloc[0]:.3%}；在相同French现金下使用月频后为{previous.loc['alpha_ann', 'reproduced_mean']:.3%}。这说明月频聚合解释了主要的alpha水平差距。日历月与持仓展期也作过诊断比较；最终保留与原图更吻合的固定交易日和忽略重复信号设定。
 
-原文正文给出的平均夏普差约为-0.04；矢量图中，基准线约为{comparison['paper_figure_benchmark_sharpe']:.3f}，196根柱子的平均值约为{aligned.loc['sharpe', 'paper_figure_mean']:.3f}，两者之差约为{comparison['paper_figure_mean_sharpe_gap']:+.3f}。正文摘要与图形读数分别列示。本次夏普均值为{summary['mean_sharpe']:.3f}，相对原图均值偏高约{aligned.loc['sharpe', 'mean_error']:.3f}；剩余偏差可能涉及现金和收益统计口径，进一步定位需要原始数值或更完整的方法说明。
+### 被动基准差异的核对
+
+原文现金基准为ICE BofA 3M T-Bill指数。本次用公开的[13周国债报价](https://finance.yahoo.com/quote/%5EIRX/)构造3个月短债现金估计，每月末重新建立3个月到期的零息票据，持有期间计入贴现收益和价格变动。这与该指数[月末选择短期国债并滚动持有的定义](https://www.sec.gov/Archives/edgar/data/789281/000162363222000679/fist-form.htm)对应。
+
+估值采用[TreasuryDirect的贴现定价公式](https://www.treasurydirect.gov/marketable-securities/understanding-pricing/)：`价格=面值×(1-贴现率×剩余日数/360)`，每日现金收益为相邻估值价格之比减1。使用三个日历月的初始期限、实际日数和360天计息基准；剩余期限按当日3个月报价估值，相当于平坦期限曲线假设。缺少报价的交易日沿用最近报价。该序列是公开数据估计，精确对齐ICE指数还涉及具体票据选择和期限曲线价格。
+
+保持股票价格、参数和成交设定相同，现金口径的影响如下。年化平均现金收益为月收益均值乘12。
+
+{cash_table}
+
+将French日频现金改为其官方月度现金后，被动夏普仅小幅变化，说明日频小数舍入对差距影响很小。采用3个月月末滚动估计后，被动夏普由{audit['previous_benchmark_sharpe']:.4f}降至{audit['corrected_benchmark_sharpe']:.4f}，解释了相对原图基准差距的约{audit['cash_term_explained_fraction']:.1%}；夏普曲线RMSE从{previous.loc['sharpe', 'rmse']:.4f}降至{aligned.loc['sharpe', 'rmse']:.4f}。
+
+频率诊断使用已经完成的自然统计周期，最后周期日期一并列出：
+
+{frequency_table}
+
+月频同时保留了与原图高度接近的参数结构。作为另一项定义诊断，以年化几何收益差除以月收益年化波动得到{audit['geometric_return_over_monthly_volatility']:.4f}；本项目继续采用算术超额收益计算夏普，[AQR其他方法说明](https://www.aqr.com/-/media/AQR/Documents/Insights/White-Papers/Driving-with-the-Rear-View-Mirror.pdf)也明确采用该定义。
+
+原文正文称平均夏普落后约0.04、相对下降约16%，由这两个四舍五入数字隐含的被动夏普约为`0.04/0.16=0.25`。本次3个月现金估计得到{summary['benchmark']['sharpe']:.4f}，与这一近似参照相差{audit['text_implied_benchmark_difference']:+.4f}。原图基准线则约为{comparison['paper_figure_benchmark_sharpe']:.3f}，196根柱子的均值约为{aligned.loc['sharpe', 'paper_figure_mean']:.3f}，图形读数的平均差约为{comparison['paper_figure_mean_sharpe_gap']:+.3f}。正文摘要和原图读数保留为两类参照。
+
+相对原图尚余约{summary['benchmark']['sharpe'] - comparison['paper_figure_benchmark_sharpe']:.4f}的被动夏普差距。在固定超额波动的均值分解中，若单靠现金平均收益解释这一差距，需要年化平均现金收益约{audit['annual_cash_mean_needed_for_figure_at_fixed_volatility']:.2%}，而本次估计约{audit['cash_methods'][2]['annual_mean_cash_return']:.2%}。进一步逐点对齐需要原文实际现金指数序列和计算说明；当前结果按公开数据3个月现金估计解释，整体状态继续标记为部分复现。
 
 ## 1. 与原文逐项比较
 
@@ -157,13 +190,13 @@ report = f'''# 抄底有用吗？AQR《Hold the Dip》公开数据复现结果
 | 月频HAC(3)的p值小于0.05 | 原文未明确此口径 | {summary['hac_significant_count']}组 |
 | Holm校正后p值小于0.05 | 本项目新增评价 | {summary['holm_significant_count']}组 |
 
-**复现程度：{alignment_status}。** 本次使用Yahoo价格、French 1M现金收益、固定交易日周期、信号收盘成交近似及月频统计。原文使用Bloomberg价格及3M现金基准，并未明确给出统计频率与全部执行细节；月频设定由逐参数对照提供支持。剩余差异保留在指标表和叠加图中。
+**复现程度：{alignment_status}。** 本次使用Yahoo价格、3个月国债月末滚动现金估计、固定交易日周期、信号收盘成交近似及月频统计。原文使用Bloomberg价格及3M现金基准，并未明确给出统计频率与全部执行细节；月频设定由逐参数对照提供支持。剩余差异保留在指标表和叠加图中。
 
 ## 2. 收益、风险与仓位一起看
 
 {base_table}
 
-表内为主样本毛收益，股票采用价格收益，空仓资金获得French RF。日收益先复利汇总到月度，再计算年化波动和夏普。三条示例规则覆盖短、中、长持有期，展示用途相同；全部196条规则在CSV中保留。每个年化收益按252交易日换算。
+表内为主样本毛收益，股票采用价格收益，空仓资金获得下述3个月短债现金估计收益。日收益先复利汇总到月度，再计算年化波动和夏普。三条示例规则覆盖短、中、长持有期，展示用途相同；全部196条规则在CSV中保留。每个年化收益按252交易日换算。
 
 买入持有年化收益为{summary['benchmark']['cagr']:.2%}，最大回撤为{summary['benchmark']['max_drawdown']:.2%}。抄底规则的股票平均仓位在全网格上为{grid.exposure.mean():.1%}，长期空仓的现金收益构成了策略回报的一部分。196规则组合的夏普为{summary['baselines']['equal_weight_196']['sharpe']:.3f}，其计算方式是每天将资金等分给全部规则后取平均日收益。
 

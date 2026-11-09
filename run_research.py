@@ -22,6 +22,19 @@ HOLDS = [21, 42, 63, 126, 252, 756, 1260]
 START, END, FORWARD_END = '1965-01-01', '2025-09-30', '2026-09-30'
 
 
+def bill_cash_returns(discount_yield, dates):
+    roll = pd.Series(np.arange(len(dates)), index=dates).groupby(dates.to_period('M')).transform('min').to_numpy() - 1
+    roll = np.maximum(roll, 0)
+    maturity = dates[roll] + pd.DateOffset(months=3)
+    previous = np.maximum(np.arange(len(dates)) - 1, 0)
+    # The remaining-maturity bill is marked using the observed 3M quote: a flat-curve approximation.
+    price = 1 - discount_yield * (maturity - dates).days.to_numpy() / 360
+    previous_price = 1 - discount_yield[previous] * (maturity - dates[previous]).days.to_numpy() / 360
+    cash = price / previous_price - 1
+    cash[0] = 0
+    return cash
+
+
 def load_data():
     raw = ROOT / 'data/raw'
     chart = json.loads((raw / 'gspc_daily.json').read_text())['chart']['result'][0]
@@ -43,6 +56,17 @@ def load_data():
         raise ValueError('Some price dates have no French RF; inspect dates before proceeding')
     if data.index[0] > pd.Timestamp('1963-01-10') or data.index[-1] < pd.Timestamp(FORWARD_END):
         raise ValueError('Input data does not cover the fixed research window')
+    data['rf_french'] = data['rf']
+    quote = json.loads((raw / 'irx_daily.json').read_text())['chart']['result'][0]
+    quote_dates = pd.to_datetime(quote['timestamp'], unit='s', utc=True).tz_convert('America/New_York').normalize().tz_localize(None)
+    quoted_yield = pd.Series(quote['indicators']['quote'][0]['close'], index=quote_dates)
+    if quoted_yield.index.has_duplicates or not quoted_yield.index.is_monotonic_increasing:
+        raise ValueError('Treasury yield dates must be unique and increasing')
+    quoted_yield = quoted_yield.reindex(data.index).ffill() / 100
+    if quoted_yield.isna().any():
+        raise ValueError('Treasury yields do not cover the price dates')
+    data['tbill_discount_yield'] = quoted_yield
+    data['rf'] = bill_cash_returns(quoted_yield.to_numpy(), data.index)
     data['market_return'] = data['close'].pct_change(fill_method=None)
     data['market_excess'] = data['market_return'] - data['rf']
     data.iloc[1:].to_csv(ROOT / 'data/processed/market_daily.csv', float_format='%.12g')
@@ -105,8 +129,14 @@ def run():
         np.testing.assert_array_equal(positions([True, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 0])
         np.testing.assert_array_equal(positions([True, False, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 0, 0])
         np.testing.assert_array_equal(positions([True, False, False, True, False, False, False, False], 2, lag=2), [0, 0, 1, 1, 0, 1, 1, 0])
+        bill_dates = pd.to_datetime(['2020-01-31', '2020-02-03'])
+        expected_cash = (1 - 0.05 * 87 / 360) / (1 - 0.05 * 90 / 360) - 1
+        np.testing.assert_allclose(bill_cash_returns(np.array([0.05, 0.05]), bill_dates), [0, expected_cash])
+        shock_dates = pd.to_datetime(['2020-01-02', '2020-01-03'])
+        expected_shock = (1 - 0.02 * 90 / 360) / (1 - 0.01 * 91 / 360) - 1
+        np.testing.assert_allclose(bill_cash_returns(np.array([0.01, 0.02]), shock_dates), [0, expected_shock])
         np.testing.assert_allclose(monthly_returns([0.10, -0.05, 0.02], pd.to_datetime(['2000-01-28', '2000-01-31', '2000-02-01']))[:, 0], [0.045, 0.02])
-        checks += ['close-to-next-close timing and exact holding length', 'delayed entry ignores signals until actual exit close', 'monthly compounding across month boundaries', 'ignore vs extend repeated signals', 'no-signal cash position']
+        checks += ['close-to-next-close timing and exact holding length', 'delayed entry ignores signals until actual exit close', 'monthly compounding across month boundaries', '3M bill carry and price revaluation', 'ignore vs extend repeated signals', 'no-signal cash position']
     data = load_data()
     # The experiment begins flat; pre-1965 prices are used only for lookback calculation.
     raw_signals = {(l, d): ((data['close'] / data['close'].shift(l) - 1 <= -d) & (data.index >= START)).to_numpy()
@@ -200,7 +230,7 @@ def run():
         np.testing.assert_array_equal(positions(sig[:cut], 63), positions(sig, 63)[:cut])
         checks += ['position/return accounting', 'cost monotonicity across all 196 strategies', 'prefix causality']
     summary = {'sample_start': str(daily.index[0].date()), 'sample_end': str(daily.index[-1].date()), 'days': len(daily),
-               'strategy_count': len(results), 'benchmark': bh, 'statistics_frequency': 'monthly', 'signal_lag': 1, 'hac_month_lags': 3,
+               'strategy_count': len(results), 'benchmark': bh, 'cash_method': '3M bill monthly-roll proxy, ACT/360 discount pricing, flat curve', 'statistics_frequency': 'monthly', 'signal_lag': 1, 'hac_month_lags': 3,
                'mean_sharpe': float(results.sharpe.mean()), 'mean_sharpe_gap': float(results.sharpe_gap.mean()),
                'underperform_share': float((results.sharpe_gap < 0).mean()),
                'mean_alpha_ann': float(results.alpha_ann.mean()),
@@ -239,7 +269,7 @@ def run():
         axes[0].plot(nav.index, nav[name], label=label, lw=1.2)
         dd = nav[name] / np.maximum.accumulate(np.r_[1, nav[name].to_numpy()])[1:] - 1
         axes[1].plot(nav.index, dd * 100, lw=0.9)
-    axes[0].set(yscale='log', ylabel='Wealth (log scale)', title='Gross price-return strategies, cash earns French RF'); axes[0].legend(fontsize=8)
+    axes[0].set(yscale='log', ylabel='Wealth (log scale)', title='Gross price-return strategies, cash: 3M bill roll proxy'); axes[0].legend(fontsize=8)
     axes[1].set(ylabel='Drawdown (%)'); fig.tight_layout(); fig.savefig(out / 'figures/03_nav_drawdown.png'); plt.close(fig)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     axes[0].hist(results.t_hac, bins=24, color='#417e95', edgecolor='white')
