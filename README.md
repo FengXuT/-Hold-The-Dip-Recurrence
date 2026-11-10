@@ -1,12 +1,14 @@
-# 量化研报复现
+# A股量化研报复现与因子研究
 
-两个项目统一放在本仓库中，各自包含复现代码、README和结果报告。
+围绕华泰期货研究院2026年9月1日发布的《大跌后应该如何抄底2.0？——左侧+企稳确认》，研究A股指数大跌后的入场时机、实际股指期货交易和连续因子扩展。
 
-| 项目 | 原文日期 | 研究内容 | 结果报告 |
+[官网原研报](https://www.htfc.com/wz_upload/png_upload/20260909/1788943656749408f5b.pdf)
+
+| 研究部分 | 内容 | 运行说明 | 结果报告 |
 |---|---|---|---|
-| [01_aqr_hold_the_dip](01_aqr_hold_the_dip/) | 2025-12-01 | AQR逢跌买入研究；参数曲线接近，被动基准仍有差距 | [结果报告](01_aqr_hold_the_dip/REPORT.html) |
-| [02_huatai_stabilization](02_huatai_stabilization/) | 2026-09-01 | 华泰期货正式研报：大跌后企稳确认、真实股指期货交易及连续因子扩展；25组参数年化最大差异0.05个百分点 | [结果报告](02_huatai_stabilization/REPORT.html) |
+| 研报复现 | 七日企稳确认、真实合约、历史保证金、25组参数与四指数比较 | [README](02_huatai_stabilization/README.md) | [复现报告](02_huatai_stabilization/REPORT.html) |
+| 自主因子 | 下行压力衰减与新低停止；信息时点审查、历史时间留出与连续三轮复查 | [README](02_huatai_stabilization/factor_study/README.md) | [因子研究报告](02_huatai_stabilization/factor_study/REPORT.html) |
 
-新项目优先从持续计算的价格、波动与期货基差信号开展研究。完整规则、数据来源、逐笔交易和原文对照见各项目报告；运行命令见各目录README。
+后续重点研究卖压消退、价格修复和期货基差信号。完整规则、数据来源、逐笔交易和检验结果见报告；复算命令见相应README。
 
-基于第二份研报的[自主双因子回测](02_huatai_stabilization/factor_study/README.md)及[独立报告](02_huatai_stabilization/factor_study/REPORT.html)已经完成，研究下行压力衰减与新低停止对交易时机的影响，并已完成信息时点修正与历史时间留出检验。
+原始数据和运行输出由代码生成，仓库保留研究代码、README和结果报告。

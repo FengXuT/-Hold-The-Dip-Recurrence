@@ -1,7 +1,0 @@
-.venv/
-__pycache__/
-.ipynb_checkpoints/
-/data/
-/outputs/
-/docs/
-/research_walkthrough.ipynb
