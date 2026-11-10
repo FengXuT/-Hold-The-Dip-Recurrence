@@ -9,4 +9,4 @@
 
 新项目优先从持续计算的价格、波动与期货基差信号开展研究。完整规则、数据来源、逐笔交易和原文对照见各项目报告；运行命令见各目录README。
 
-基于第二份研报的[自主双因子回测](02_huatai_stabilization/factor_study/README.md)及[独立报告](02_huatai_stabilization/factor_study/REPORT.html)已经完成，研究下行压力衰减与新低停止对交易时机的影响。
+基于第二份研报的[自主双因子回测](02_huatai_stabilization/factor_study/README.md)及[独立报告](02_huatai_stabilization/factor_study/REPORT.html)已经完成，研究下行压力衰减与新低停止对交易时机的影响，并已完成信息时点修正与历史时间留出检验。

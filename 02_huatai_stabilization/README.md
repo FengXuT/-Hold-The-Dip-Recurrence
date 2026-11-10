@@ -82,4 +82,4 @@ python download_data.py --refresh
 
 ## 自主因子扩展
 
-新增[下行压力衰减＋新低停止回测](factor_study/README.md)及[独立结果报告](factor_study/REPORT.html)：组合年化15.58%，夏普1.466，包含逐笔归因、等敞口、跨指数与参数邻域比较。
+新增[下行压力衰减＋新低停止回测](factor_study/README.md)及[独立结果报告](factor_study/REPORT.html)：已修正期末信号与定仓时点；原区间组合年化15.55%、夏普1.468，并新增训练封存、时间留出与执行方式对照。
