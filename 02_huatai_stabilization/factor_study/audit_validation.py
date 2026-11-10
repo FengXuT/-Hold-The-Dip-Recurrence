@@ -1,5 +1,6 @@
 """验证过去结果不受未来行情影响，并执行训练期封存后的时间留出检验。"""
 import json
+from io import StringIO
 import pandas as pd
 from backtest import OUT,load_data,run,features,base
 
@@ -33,6 +34,38 @@ if __name__=='__main__':
         pd.testing.assert_series_equal(short['nav'],full['nav'].loc[:cutoff])
         snapshots.append(dict(cutoff=str(cutoff.date()),orders=len(short['orders']),open_trades=short['metrics']['open_trades'],nav=short['metrics']['final_nav']))
     evidence['prefix_snapshots']=snapshots
+    # 单独从开仓日开始，必须执行此前收盘已形成的同一订单。
+    entry_day=pd.Timestamp('2024-02-20')
+    one_day=run(q,futures,expiries,calendar,start=entry_day,end=entry_day)
+    quote=futures['IM2406'].loc[entry_day]
+    expected_pnl=103*200*(quote.c-quote.o)-103*200*quote.o*base.FEE
+    assert one_day['orders'].iloc[0]['confirm']==pd.Timestamp('2024-02-19')
+    assert abs(one_day['pnl'].iloc[0]-expected_pnl)<1e-6
+    assert abs(one_day['pnl'].iloc[0]-full['pnl'].loc[entry_day])<1e-6
+    for order in full['orders'].itertuples():
+        isolated=run(q,futures,expiries,calendar,start=order.entry,end=order.entry)
+        assert isolated['orders'].iloc[0]['confirm']==order.confirm
+        assert isolated['orders'].iloc[0]['quantity']==order.quantity
+        assert abs(isolated['pnl'].iloc[0]-full['pnl'].loc[order.entry])<1e-6
+    rejected_day=run(q,futures,expiries,calendar,start=pd.Timestamp('2026-09-03'),end=pd.Timestamp('2026-09-03'))
+    assert len(rejected_day['rejected'])==1 and rejected_day['trades'].empty
+    assert rejected_day['metrics']['total_return']==0
+    loss_day=pd.Timestamp('2023-01-04')
+    loss_window=run(q,futures,expiries,calendar,start=loss_day,end=loss_day)
+    assert loss_window['metrics']['total_return']<0
+    assert abs(loss_window['metrics']['max_drawdown']+loss_window['metrics']['total_return'])<1e-12
+    assert loss_window['metrics']['sharpe'] is None and loss_window['metrics']['volatility'] is None
+    json.dumps(loss_window['metrics'],allow_nan=False)
+    empty=run(q,futures,expiries,calendar,end=pd.Timestamp('2022-07-29'))
+    for key in ['orders','trades','rejected']:
+        assert empty[key].empty
+        parsed=pd.read_csv(StringIO(empty[key].to_csv(index=False)))
+        assert parsed.columns.tolist()==full[key].columns.tolist()
+    evidence['window_initialization']=dict(date=str(entry_day.date()),previous_confirm='2024-02-19',
+        expected_first_day_profit=float(expected_pnl),actual_first_day_profit=float(one_day['pnl'].iloc[0]),
+        single_day_loss_return=loss_window['metrics']['total_return'],empty_csv_roundtrips=3,
+        one_day_statistics_finite=True,entry_windows_checked=len(full['orders']),rejected_first_session_checked=True)
+
     cutoff=pd.Timestamp('2024-02-19')
     mutated_q=q.copy();mutated_q.loc[mutated_q.index>cutoff,['open','high','low','close']]*=1.7
     mutated_f={n:f.copy() for n,f in futures.items()}

@@ -80,7 +80,7 @@ html=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="vie
 body{{margin:0;background:#f2f5f6;color:#273b49;font:17px/1.85 "Microsoft YaHei","Noto Sans CJK SC",sans-serif}}main{{max-width:1040px;margin:36px auto;padding:48px 60px;background:white;border-top:7px solid #1a5f94}}h1{{font-size:34px;line-height:1.4;margin:16px 0}}h2{{font-size:25px;margin:44px 0 14px;color:#174763}}h3{{font-size:19px;margin-top:28px}}p{{margin:14px 0}}a{{color:#226e9c}}.tag{{font-size:14px;color:#687c88;letter-spacing:2px}}.lead{{font-size:19px}}.callout{{padding:20px 24px;background:#edf5fa;border-left:4px solid #4c92b8}}.table{{overflow-x:auto;margin:18px 0}}table{{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}}th,td{{padding:10px 12px;border-bottom:1px solid #dfe7ec;text-align:right}}th{{background:#edf3f6}}th:first-child,td:first-child{{text-align:left}}svg{{width:100%;height:auto}}.formula,pre{{padding:14px 18px;background:#f1f5f7;overflow-x:auto;font-family:Consolas,monospace;line-height:1.7}}li{{margin:8px 0}}footer{{margin-top:42px;border-top:1px solid #dfe7ec;padding-top:18px;font-size:14px}}@media(max-width:700px){{main{{margin:0;padding:24px 20px}}h1{{font-size:27px}}h2{{font-size:23px}}body{{font-size:16px}}}}@media print{{main{{margin:0;padding:0;border:0}}body{{background:white}}h2{{break-after:avoid}}table,svg{{break-inside:avoid}}}}
 </style><main><div class="tag">自主因子研究 · 时点审查 · 历史时间留出</div>
 <h1>双因子策略：<br>修正信息时点，再检验样本外表现</h1>
-<p class="lead">本研究在大跌后企稳的框架上增加“下行压力衰减”和“连续三日守底”。本次更新发现并修正了期末信号删除与开盘价定仓两处问题，补充训练期封存、时间留出和成交方式对照。</p>
+<p class="lead">本研究在大跌后企稳的框架上增加“下行压力衰减”和“连续三日守底”。本次更新修正区间起止边界与定仓信息时点，并补齐训练期封存、时间留出和成交方式对照。</p>
 <div class="callout"><strong>核心发现：</strong>修正后，原研究区间组合年化收益为{new['annual_return']*100:.2f}%，最大回撤{new['max_drawdown']*100:.2f}%，夏普{new['sharpe']:.3f}。但仅用训练期挑出的较严格参数，在后续时间留出段年化为12.87%，低于同阈值基准18.36%。少量训练交易与参数选择不稳定，是当前研究的主要问题。</div>
 <p>研究起点是<a href="https://www.htfc.com/wz_upload/png_upload/20260909/1788943656749408f5b.pdf">华泰期货研究院2026年9月1日正式研报</a>。上级<a href="../REPORT.html">原研报复现报告</a>保留其历史口径；本报告使用修正后的可下单规则开展因子检验。</p>
 <h2>1. 策略研究什么</h2>
@@ -101,6 +101,10 @@ body{{margin:0;background:#f2f5f6;color:#273b49;font:17px/1.85 "Microsoft YaHei"
 <p>旧检查先删除截止日之后平仓的交易，再比较剩余交易。这使两边同时跳过边界持仓，错误被隐藏。本次改为比较截止时已经形成的全部订单、当时持仓和每日净值。</p>
 {checks_table}
 <p>五个截断点均保持订单前缀与净值一致。另把2024年2月19日之后的指数价格乘1.7、期货价格乘1.9，截止当日的订单与净值保持一致；把训练截止日之后价格整体扰动，训练阈值、九组训练结果与所选参数也保持一致。</p>
+<h3>补充复查：区间首日漏掉前一收盘的订单</h3>
+<p>单独从2024年2月20日开盘开始回测时，旧初始化只从当天收盘检查信号，漏掉2月19日已确认的103手订单，首日损益错误地变为零。相同订单在完整回放中，2月20日净损益为{audit['window_initialization']['actual_first_day_profit']/1e4:.2f}万元。</p>
+<p>现在从区间首日前一个收盘初始化决策，账户仍以空仓和初始资金启动。成交与损益从区间首日计算。逐一把原区间13笔订单的开仓日作为独立窗口起点，订单和首日损益均与完整回放一致；另用9月3日验证首日跳空超过限价时正确撤单。</p>
+<p>无交易区间的订单、持仓与撤单CSV现在保留完整表头，三类文件均通过写出再读入检查。单日窗口保留收益和回撤，波动率与夏普因观测不足而留空；2023年1月4日的单日亏损窗口也验证了回撤从初始净值1开始计算。此次复查后，主区间、时间留出与新增区间的汇总数值保持一致。</p>
 <h2>3. 修正后的原区间结果</h2>
 <p>区间为2022年7月22日至2026年8月31日，共997个交易日。各组采用相同执行规则、1亿元初始资金与1200万元保证金上限；IM历史保证金率沿用原复现中的15%→12%变化。</p>
 {main_svg}{main_table}
@@ -136,7 +140,7 @@ body{{margin:0;background:#f2f5f6;color:#273b49;font:17px/1.85 "Microsoft YaHei"
 {trades_table}
 <p>每笔记录包含确认日参考价、订单手数、限价、实际成交价、计划退出与实际状态。每日损益之和与已实现加未实现交易损益逐笔对账。</p>
 <h2>8. 结论与复算</h2>
-<p>本次审查修复了边界信号删除、成交价反推手数，以及只比较完成交易的核验缺口。原区间收益优势小幅保留；训练期选参在后续样本中表现不稳，训练交易数量与收益集中度是更重要的研究约束。接下来保留固定候选与训练封存规则，按新增行情累积前向记录。</p>
+<p>本次审查修复了期末信号删除、期初订单初始化、成交价反推手数，以及只比较完成交易的核验缺口。原区间收益优势小幅保留；训练期选参在后续样本中表现不稳，训练交易数量与收益集中度是更重要的研究约束。接下来保留固定候选与训练封存规则，按新增行情累积前向记录。</p>
 <pre>python fetch_evaluation_data.py
 python backtest.py
 python audit_validation.py

@@ -10,6 +10,10 @@ import reproduce as base
 OUT=ROOT/'outputs'
 NAMES={'baseline':'原企稳条件','pressure':'下行压力衰减','floor':'连续3日守底','combined':'双因子组合'}
 START,END=base.START,base.END
+ORDER_COLUMNS=['limit_price','trigger','confirm','entry','planned_exit','contract','quantity',
+    'margin_rate','sizing_price','downside_ratio','days_since_low','repair','threshold']
+TRADE_COLUMNS=ORDER_COLUMNS+['entry_price','exit','exit_price','status','last_mark','profit','entry_margin']
+REJECTION_COLUMNS=['entry','contract','quantity','opening_price','limit_price']
 
 
 def load_data(evaluation=False):
@@ -55,7 +59,7 @@ def statistics(nav,trades,exposure):
     returns=nav.diff();returns.iloc[0]=nav.iloc[0]-1
     daily=returns/(nav.shift(1).fillna(1))
     annual=float(nav.iloc[-1]**(base.ANNUAL_DAYS/len(nav))-1)
-    vol=float(daily.std()*np.sqrt(base.ANNUAL_DAYS))
+    vol=float(daily.std()*np.sqrt(base.ANNUAL_DAYS)) if len(daily)>1 else None
     peak=nav.cummax().clip(lower=1)
     dd=float(-(nav/peak-1).min())
     closed=trades.loc[trades.status=='closed'] if len(trades) else trades
@@ -75,7 +79,10 @@ def run(q,futures,expiries,calendar,start=START,end=END,prefix='IM',method='comb
     pnl=pd.Series(0.,index=dates);exposure=pnl.copy()
     orders,ledger,rejected=[],[],[]
     pending,position=None,None
-    for date in dates:
+    first_position=q.index.get_loc(dates[0])
+    # 区间从首日开盘开始：前一收盘可形成首日订单，账户仍从空仓启动。
+    decision_dates=dates.insert(0,q.index[first_position-1]) if first_position>0 else dates
+    for date in decision_dates:
         if position is not None and date==position['planned_exit']:
             price=float(futures[position['contract']].loc[date,'o'])-slippage
             amount=position['quantity']*multiplier*(price-position['last_mark'])
@@ -116,15 +123,14 @@ def run(q,futures,expiries,calendar,start=START,end=END,prefix='IM',method='comb
             quantity=quantity,margin_rate=margin,sizing_price=sizing_price,downside_ratio=float(s.downside_ratio),
             days_since_low=int(s.days_since_low),repair=float(s.repair),threshold=float(s.threshold))
         orders.append(pending.copy())
-    trades=pd.DataFrame(ledger)
-    if trades.empty:trades=pd.DataFrame(columns=['entry','exit','status','profit','entry_margin'])
+    trades=pd.DataFrame(ledger,columns=TRADE_COLUMNS)
     nav=1+pnl.cumsum()/base.CAPITAL
     assert abs(pnl.sum()-trades.profit.sum())<.01
     summary=statistics(nav,trades,exposure)
     summary['rejected_orders']=len(rejected)
     summary['max_entry_margin']=float(trades.entry_margin.max()/base.CAPITAL) if len(trades) else 0.
     if opening_limit:assert summary['max_entry_margin']<=.12+1e-12
-    return dict(rejected=pd.DataFrame(rejected),nav=nav,pnl=pnl,exposure=exposure,trades=trades,orders=pd.DataFrame(orders),
+    return dict(rejected=pd.DataFrame(rejected,columns=REJECTION_COLUMNS),nav=nav,pnl=pnl,exposure=exposure,trades=trades,orders=pd.DataFrame(orders,columns=ORDER_COLUMNS),
                 features=signal,metrics=summary)
 
 
