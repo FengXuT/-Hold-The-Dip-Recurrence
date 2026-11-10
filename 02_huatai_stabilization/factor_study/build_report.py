@@ -75,6 +75,18 @@ sensitivity_table=table([[z.ratio_limit,int(z.floor_days),int(z.trades),f'{z.ann
 cross_names={'IM':'中证1000','IC':'中证500','IF':'沪深300','IH':'上证50'}
 cross_table=table([[cross_names[z.prefix],NAMES[z.method],f'{z.annual_return*100:.2f}%',f'{z.max_drawdown*100:.2f}%',f'{z.sharpe:.3f}'] for z in cross.loc[cross.method.isin(['baseline','combined'])].itertuples()],['指数','策略','年化收益','最大回撤','夏普'])
 trades_table=table([[z.confirm.strftime('%Y-%m-%d'),z.entry.strftime('%Y-%m-%d'),z.exit.strftime('%Y-%m-%d'),z.contract,z.quantity,f'{z.sizing_price:.1f}',f'{z.profit/1e4:.2f}'] for z in ledgers['combined'].itertuples()],['确认日','开仓日','平仓日','合约','手数','确认时参考价','净利润/万元'])
+review_section=''
+review_paths=[OUT/f'review_round_{i}.json' for i in [1,2,3]]
+if all(path.exists() for path in review_paths):
+    rounds=[json.loads(path.read_text(encoding='utf-8')) for path in review_paths]
+    assert [r['round'] for r in rounds]==[1,2,3] and all(r['status']=='passed' for r in rounds)
+    a,b,c=[r['checks'] for r in rounds]
+    review_table=table([
+        [1,'行情、因子与选约',f"{a['ohlc_rows']:,}行行情；{a['independent_factor_rows']:,}组因子；{a['independently_checked_orders']}笔订单",'通过'],
+        [2,'损益、成本与统计',f"{b['scenarios']}种情景；{b['trade_pnl_reconstructions']}笔交易；{b['independently_rebuilt_daily_values']:,}个每日净值",'通过'],
+        [3,'空输出目录完整运行',f"{c['required_outputs']}项必要输出；JSON/CSV读取、报告内容与独立记录隔离",'通过']],
+        ['轮次','范围','独立核查内容','结果'])
+    review_section='<h3>最终连续三轮复查</h3><p>本次先核对下载循环与文件清单，将README中的季度合约数量从76更正为72；独立评估额外加入IM2703，实际核查73个合约。更正后，以下三轮连续通过。</p>'+review_table+'<p>第三轮先移开原输出目录，再完整运行回测、审计、独立记录与报告生成；新输出与原独立记录一致。三轮覆盖数据、交易计算和复现链，训练选参在时间留出中表现较弱的研究结果继续保留。</p>'
 html=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,">
 <title>双因子策略：时点修正与时间留出检验</title><style>
 body{{margin:0;background:#f2f5f6;color:#273b49;font:17px/1.85 "Microsoft YaHei","Noto Sans CJK SC",sans-serif}}main{{max-width:1040px;margin:36px auto;padding:48px 60px;background:white;border-top:7px solid #1a5f94}}h1{{font-size:34px;line-height:1.4;margin:16px 0}}h2{{font-size:25px;margin:44px 0 14px;color:#174763}}h3{{font-size:19px;margin-top:28px}}p{{margin:14px 0}}a{{color:#226e9c}}.tag{{font-size:14px;color:#687c88;letter-spacing:2px}}.lead{{font-size:19px}}.callout{{padding:20px 24px;background:#edf5fa;border-left:4px solid #4c92b8}}.table{{overflow-x:auto;margin:18px 0}}table{{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}}th,td{{padding:10px 12px;border-bottom:1px solid #dfe7ec;text-align:right}}th{{background:#edf3f6}}th:first-child,td:first-child{{text-align:left}}svg{{width:100%;height:auto}}.formula,pre{{padding:14px 18px;background:#f1f5f7;overflow-x:auto;font-family:Consolas,monospace;line-height:1.7}}li{{margin:8px 0}}footer{{margin-top:42px;border-top:1px solid #dfe7ec;padding-top:18px;font-size:14px}}@media(max-width:700px){{main{{margin:0;padding:24px 20px}}h1{{font-size:27px}}h2{{font-size:23px}}body{{font-size:16px}}}}@media print{{main{{margin:0;padding:0;border:0}}body{{background:white}}h2{{break-after:avoid}}table,svg{{break-inside:avoid}}}}
@@ -141,6 +153,7 @@ body{{margin:0;background:#f2f5f6;color:#273b49;font:17px/1.85 "Microsoft YaHei"
 <p>每笔记录包含确认日参考价、订单手数、限价、实际成交价、计划退出与实际状态。每日损益之和与已实现加未实现交易损益逐笔对账。</p>
 <h2>8. 结论与复算</h2>
 <p>本次审查修复了期末信号删除、期初订单初始化、成交价反推手数，以及只比较完成交易的核验缺口。原区间收益优势小幅保留；训练期选参在后续样本中表现不稳，训练交易数量与收益集中度是更重要的研究约束。接下来保留固定候选与训练封存规则，按新增行情累积前向记录。</p>
+{review_section}
 <pre>python fetch_evaluation_data.py
 python backtest.py
 python audit_validation.py

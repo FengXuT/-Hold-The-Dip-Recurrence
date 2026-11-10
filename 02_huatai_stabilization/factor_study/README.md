@@ -76,3 +76,25 @@ python build_report.py
 `outputs/`中的主要结果：`nav.csv`、`*_trades.csv`、`*_orders.csv`、`*_rejected.csv`、`metrics.json`、`audit.json`、`training_grid.csv`、`frozen_training_config.json`、`holdout.csv`、`holdout_nav.csv`、`walk_forward.csv`及`post_report_holdout.csv`。
 
 原始数据和中间结果由Git忽略。仓库提交代码、README和一份HTML结果报告；单独区间的数值记录保留在本地输出目录。
+
+## 连续三轮复查
+
+修正上级README的合约数量后，最终连续三轮未发现新增实现、数据或报告问题：
+
+| 轮次 | 独立检查范围 | 结果 |
+|---|---|---|
+| 1 | 32,645行行情、3,988组手工逐日因子、51笔订单的时点/手数/限价/选约 | 通过 |
+| 2 | 18种情景、220笔交易、16,993个每日净值的独立损益与统计重建 | 通过 |
+| 3 | 移开旧输出目录后完整运行，检查必要输出、JSON/CSV及报告内容 | 通过 |
+
+复核命令：
+
+```bash
+python review_cycles.py --round 1
+python review_cycles.py --round 2
+python recent_year_check.py
+python review_cycles.py --round 3
+python build_report.py
+```
+
+第三轮检查当前完整运行生成的输出；本次另外从空输出目录执行了前述完整运行链。`review_round_1.json`至`review_round_3.json`记录各轮证据；报告在三份记录均通过后呈现检查表。独立区间数值继续只保存在忽略目录。
