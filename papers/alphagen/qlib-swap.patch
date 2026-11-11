@@ -1,0 +1,6 @@
+--- a/alphagen_qlib/strategy.py
++++ b/alphagen_qlib/strategy.py
+@@ -61,2 +61,2 @@
+-            can_swap = len(to_buy) >= self.n_swap and holding_priority and signal[stock_id] > signal[holding_priority[-1]]
++            can_swap = len(to_buy) < self.n_swap and holding_priority and signal[stock_id] > signal[holding_priority[-1]]
+             if can_swap:

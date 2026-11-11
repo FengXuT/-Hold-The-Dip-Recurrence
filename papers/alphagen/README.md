@@ -1,67 +1,59 @@
-# AlphaGen 论文复现
+# AlphaGen 复现运行说明
 
-复现 KDD 2023 论文《Generating Synergistic Formulaic Alpha Collections via Reinforcement Learning》中的 CSI300 实验。固定因子池容量为 10，seed 1 的测试 IC 为 **0.0648**，Rank IC 为 **0.0746**。在 2020—2021 年的 50/5 模拟交易中，组合扣费年化收益为 **14.68%**，相对沪深300的年化超额收益为 **3.46%**。[论文](https://arxiv.org/abs/2306.12964) · [作者代码](https://github.com/RL-MLDM/alphagen)
+本目录复现 CSI300、因子池容量 10、seed 1 的实验。论文对照、预测指标和回测图见 [实验报告](REPORT.md)。
 
-## 数据和因子搜索
+## 1. 安装环境
 
-股票范围为沪深300历史成分股，使用开、高、低、收、成交量和成交量加权均价六项特征。股票行情来自 BaoStock，前复权基准日为 2023-01-15，处理后载入 Qlib。预测目标为从当日收盘到未来第 20 个交易日收盘的收益。训练期为 2009—2018 年，验证期为 2019 年，测试期为 2020—2021 年。[论文 §4.1](https://arxiv.org/html/2306.12964v1#S4.SS1)
+在 Recurrence 仓库根目录进入 `papers/alphagen`。已验证环境为 Linux/WSL、Python 3.10、PyTorch 2.7.1 和 CUDA 12.8。训练需要 CUDA GPU，回测用 CPU。
 
-1. PPO 逐个生成公式记号，以动作掩码约束运算符、特征和常数的组合，使生成的序列可以解析为因子表达式。
-2. 对各因子按交易日做截面标准化，用线性权重加总。新因子进入候选池后，结合因子与未来收益的相关性及因子之间的相关性，重新优化组合权重。池超过 10 个因子时，移除绝对权重最小的因子。
-3. 用更新后组合的训练集 IC 作为强化学习奖励。seed 1 从头训练，目标步数 250,000，按完整 PPO 采样批次收尾，实际完成 **251,904 步**，最终保留 10 个因子。[论文 §3](https://arxiv.org/html/2306.12964v1#S3)
+```bash
+cd papers/alphagen
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -r requirements.txt
+```
 
-## 预测结果
+获取固定版本的作者代码，并应用本次回测使用的换仓条件修正。训练和回测从这个版本导入表达式、因子池和策略模块。
 
-IC 是因子分数与未来 20 日收益的每日截面 Pearson 相关系数，Rank IC 使用 Spearman 相关系数。表中报告各交易日的均值，ICIR 与 Rank ICIR 分别以对应的每日相关系数均值除以总体标准差，未做年化。
+```bash
+mkdir -p data
+git clone https://github.com/ICT-FinD-Lab/alphagen.git data/alphagen-upstream
+git -C data/alphagen-upstream checkout --detach 3f3f179f72eaeb04658eb31fd2ddffa2ab0ecb65
+git -C data/alphagen-upstream apply "$PWD/qlib-swap.patch"
+export PYTHONPATH="$PWD/data/alphagen-upstream"
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+```
 
-| 数据区间 | 交易日 | IC | Rank IC | ICIR | Rank ICIR |
-|---|---:|---:|---:|---:|---:|
-| 训练集 2009—2018 | 2,431 | 0.0931 | 0.0784 | 0.7448 | 0.6457 |
-| 验证集 2019 | 244 | 0.0034 | 0.0345 | 0.0357 | 0.3135 |
-| 测试集 2020—2021 | 486 | 0.0648 | 0.0746 | 0.6034 | 0.6709 |
+新开终端后先激活虚拟环境，并重新设置上面的环境变量。[作者代码的固定版本](https://github.com/ICT-FinD-Lab/alphagen/tree/3f3f179f72eaeb04658eb31fd2ddffa2ab0ecb65)
 
-| CSI300 测试指标 | 本次 seed 1 | 论文表 2 | 相对论文差距 |
-|---|---:|---:|---:|
-| IC | 0.0648 | 0.0725 | 低 10.6% |
-| Rank IC | 0.0746 | 0.0806 | 低 7.5% |
+## 2. 准备数据
 
-论文主表报告 10 个种子的均值，因子池容量从 10、20、50、100 中选择。论文表 3 的单个 10 因子组合 IC 为 0.0511，本次 seed 1 高出 0.0137。[论文表 2](https://arxiv.org/html/2306.12964v1#S4.T2) · [论文表 3](https://arxiv.org/html/2306.12964v1#S4.T3)
+下载 2026-10-27 版社区 Qlib 归档。脚本从归档读取 CSI300 历史成分股、交易日和基准指数收盘价。个股行情由 BaoStock 下载并按 2023-01-15 重设前复权基准，随后转换成 Qlib 二进制格式。[社区数据发布页](https://github.com/chenditc/investment_data/releases/tag/2026-10-27)
 
-## 模拟交易
+```bash
+mkdir -p data/community
+curl -fL https://github.com/chenditc/investment_data/releases/download/2026-10-27/qlib_bin.tar.gz -o data/qlib_bin-2026-10-27.tar.gz
+tar -xzf data/qlib_bin-2026-10-27.tar.gz --strip-components=1 -C data/community
+python prepare_data.py --community-dir data/community
+```
 
-组合目标持有 50 只股票，每日最多替换 5 只已有持仓。使用前一交易日的因子分数，在当日收盘价成交，并考虑交易状态和涨跌停约束。初始资金 1 亿元，买卖费率各 0.15%，每笔最低 5 元。基准为社区 Qlib 数据归档中的沪深300指数。持股数和替换数采用论文的回测设置。[论文 §4.4](https://arxiv.org/html/2306.12964v1#S4.SS4)
+生成 `data/qlib_data/`、`data/csi300_benchmark.csv` 和 `data/baostock_csv/`。重新执行数据准备会复用已下载的单股 CSV。有同一复权口径的缓存时，可用 `--stock-csv /path/to/stock_csv` 指定。缓存文件按 `SH600000.csv` 命名，字段包含 `date,code,open,high,low,close,volume,vwap,factor`。
 
-| 回测指标 | seed 1 |
-|---|---:|
-| 扣费年化收益 | 14.68% |
-| 年化超额收益 | 3.46% |
-| 夏普比率 | 0.7824 |
-| 最大回撤 | -16.34% |
-| 超额收益信息比率 | 0.3920 |
-| 超额最大回撤 | -8.80% |
+如果已有准备好的 Qlib 二进制目录和基准 CSV，直接在下面命令中用 `--data-dir` 和 `--benchmark-csv` 指定路径。
 
-表中年化收益和回撤使用本地 Qlib 的加法收益口径，每年按 238 个交易日计。图中净值逐日复利累乘，策略和基准期末净值分别为 **1.302** 和 **1.206**。论文图 5 给出了净值曲线，以上统计值来自本次模拟交易。
+## 3. 训练 seed 1
 
-![AlphaGen seed 1 和沪深300的扣费后策略净值与基准净值](seed1_nav.png)
+```bash
+python train.py --seed 1 --steps 250000 --data-dir data/qlib_data --output-dir outputs/seed1
+```
 
-## 不同种子的结果
+程序以容量 10 从头训练，默认按完整 PPO 批次结束。运行后可在 `outputs/seed1/` 查看 `final_model.zip`、`final_pool.json`、`metrics.json` 和训练检查点。再次训练时指定新的输出目录。
 
-七组都固定容量 10、目标步数 25 万和相同交易设置。seed 1 的测试 IC 和 Rank IC 均为七组最高，因此本文展示该组的完整结果。按照预先约定的 2019 年验证集 IC 选组，选中的是 seed 0，其测试 IC 为 0.0452。七组测试 IC 均值为 **0.0457**，Rank IC 均值为 **0.0505**。
+## 4. 跑回测
 
-| 种子 | 验证 IC | 测试 IC | 测试 Rank IC | 年化超额收益 |
-|---|---:|---:|---:|---:|
-| 0 | 0.0331 | 0.0452 | 0.0512 | +0.84% |
-| 1 | 0.0034 | 0.0648 | 0.0746 | +3.46% |
-| 2 | -0.0136 | 0.0472 | 0.0519 | -2.74% |
-| 3 | -0.0155 | 0.0507 | 0.0548 | -2.47% |
-| 4 | -0.0347 | 0.0255 | 0.0209 | -0.81% |
-| 5 | 0.0022 | 0.0495 | 0.0642 | +6.47% |
-| 6 | -0.0067 | 0.0370 | 0.0361 | +1.51% |
+```bash
+python backtest.py --pool outputs/seed1/final_pool.json --data-dir data/qlib_data --benchmark-csv data/csi300_benchmark.csv --output-dir outputs/seed1/backtest
+```
 
-## 结果文件
-
-| 文件 | 内容 |
-|---|---|
-| [seed1_metrics.json](seed1_metrics.json) | 实验参数、各数据区间的预测指标和回测统计 |
-| [seed1_pool.json](seed1_pool.json) | 最终因子池的 10 条公式及对应权重 |
-| [seed1_nav.csv](seed1_nav.csv) | 逐日扣费策略净值与沪深300基准净值 |
+回测区间为 2020—2021 年，目标持股 50 只，每日最多替换 5 只。输出包括 `metrics.json`、`daily.csv` 和可离线打开的 `nav.html`。如需直接复算报告中的回测，将 `--pool` 改为随仓库提供的 [seed1_pool.json](seed1_pool.json)。
