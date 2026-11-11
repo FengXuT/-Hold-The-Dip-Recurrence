@@ -79,7 +79,3 @@ python download_data.py --refresh
 指数OHLC来自[中证指数公司](https://www.csindex.com.cn/)，交易日期来自[国证指数](https://www.cnindex.com.cn/)，期货逐合约日线来自新浪。四天IM2303开盘/收盘价由[中金所官方历史日行情](http://www.cffex.com.cn/sj/hqsj/rtj/202301/30/20230130_1.csv)复核。15%→12%的保证金变化由[中银国际期货转发的中金所正式通知](https://www.bocifco.com/newsinfo.aspx?cid=3&id=48089)核验。
 
 原图读取使用图6的可见轴刻度标定：横轴2023—2026年元旦，纵轴净值1.0—1.8。图像分辨率约每天一个横向像素，轨迹对比结合线宽与日期定位精度解读。
-
-## 自主因子扩展
-
-新增[下行压力衰减＋新低停止回测](factor_study/README.md)及[独立结果报告](factor_study/REPORT.html)：已修正期末信号与定仓时点；原区间组合年化15.55%、夏普1.468，并新增训练封存、时间留出与执行方式对照。
