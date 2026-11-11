@@ -127,9 +127,10 @@ if __name__=='__main__':
         assert m['combined']==direct
         reader=ReportReader();reader.feed((ROOT/'REPORT.html').read_text(encoding='utf-8'))
         text=' '.join(reader.text)
-        for value in ['15.55%','12.87%','18.36%','19.04%','91.17万元']:
+        for value in ['因子怎么来','回测怎么做','时间留出检验','15.55%','12.87%','18.36%','19.04%','373.60万元']:
             assert value in text,value
-        assert reader.charts==2 and reader.tables>=12
+        assert reader.charts==2 and reader.tables==7
+        assert all(term not in text for term in ['上次提交','如何从数据发现代码问题','连续三轮复查','本次审查'])
         assert '2025-11-10' not in text and '26.03%' not in text and '21.10%' not in text
         checks=dict(required_outputs=len(required),valid_json_files=json_count,report_charts=reader.charts,
                     report_tables=reader.tables,pipeline_outputs_consistent=True,private_year_excluded=True)
