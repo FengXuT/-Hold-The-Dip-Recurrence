@@ -1,0 +1,84 @@
+{
+  "paper": "https://arxiv.org/abs/2306.12964",
+  "experiment": {
+    "instruments": "csi300",
+    "seed": 1,
+    "pool_capacity": 10,
+    "requested_steps": 250000,
+    "actual_steps": 251904,
+    "target_horizon_trading_days": 20,
+    "date_split": {
+      "train": [
+        "2009-01-01",
+        "2018-12-31"
+      ],
+      "valid": [
+        "2019-01-01",
+        "2019-12-31"
+      ],
+      "test": [
+        "2020-01-01",
+        "2021-12-31"
+      ]
+    }
+  },
+  "metrics": {
+    "train": {
+      "ic": 0.09311386197805405,
+      "rank_ic": 0.07841427624225616,
+      "ic_std": 0.12502320110797882,
+      "rank_ic_std": 0.12144213169813156,
+      "icir": 0.7447726594173059,
+      "rank_icir": 0.6456925215803224,
+      "days": 2431,
+      "stocks": 658,
+      "std_ddof": 0
+    },
+    "valid": {
+      "ic": 0.003420241642743349,
+      "rank_ic": 0.03452976420521736,
+      "ic_std": 0.09585246443748474,
+      "rank_ic_std": 0.11012575775384903,
+      "icir": 0.035682354781540755,
+      "rank_icir": 0.31354848229419335,
+      "days": 244,
+      "stocks": 356,
+      "std_ddof": 0
+    },
+    "test": {
+      "ic": 0.06480433791875839,
+      "rank_ic": 0.07456712424755096,
+      "ic_std": 0.10739249736070633,
+      "rank_ic_std": 0.11113708466291428,
+      "icir": 0.6034344997220407,
+      "rank_icir": 0.6709472762734213,
+      "days": 486,
+      "stocks": 413,
+      "std_ddof": 0
+    }
+  },
+  "backtest": {
+    "sharpe": 0.7823696081787745,
+    "annual_return": 0.14682989743078959,
+    "max_drawdown": -0.16343530782529853,
+    "information_ratio": 0.39202913911788034,
+    "annual_excess_return": 0.03461889053110432,
+    "excess_max_drawdown": -0.08801504159621452
+  },
+  "backtest_settings": {
+    "top_k": 50,
+    "n_drop": 5,
+    "initial_cash_cny": 100000000,
+    "deal_price": "close",
+    "signal_lag_trading_days": 1,
+    "buy_cost_rate": 0.0015,
+    "sell_cost_rate": 0.0015,
+    "minimum_cost_cny": 5,
+    "annualization_days": 238,
+    "benchmark_source": "Existing community qlib_bin-2026-10-27.tar.gz CSI300 index"
+  },
+  "terminal_nav": {
+    "strategy": 1.301725067819114,
+    "csi300": 1.2059741617540247
+  }
+}
