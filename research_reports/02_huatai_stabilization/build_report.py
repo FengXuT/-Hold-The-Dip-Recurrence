@@ -58,16 +58,6 @@ for ax, label, title in zip(axes, ['direct','confirmed'], ['直接抄底','等�
 buffer = StringIO();fig.savefig(buffer, format='svg');curve_svg = buffer.getvalue();plt.close(fig)
 (OUT / 'curve_comparison.json').write_text(json.dumps(curve_stats,indent=2),encoding='utf-8')
 
-fig, axes = plt.subplots(1,2,figsize=(11,3.6),layout='constrained')
-labels = {'confirmed':'原规则','volatility':'波动收缩调仓','efficiency':'修复效率调仓'}
-for label, title in labels.items():
-    axes[0].plot(nav.index,nav[label],label=title,linewidth=1.6)
-    axes[1].plot(nav.index,(nav[label]/nav[label].cummax()-1)*100,label=title,linewidth=1.2)
-axes[0].set_title('固定公式的两项扩展',loc='left');axes[0].set_ylabel('净值');axes[0].legend(frameon=False,fontsize=9)
-axes[1].set_title('资金曲线回撤',loc='left');axes[1].set_ylabel('%')
-for ax in axes:ax.tick_params(axis='x',rotation=30)
-buffer=StringIO();fig.savefig(buffer,format='svg');extension_svg=buffer.getvalue();plt.close(fig)
-
 source_main={'direct':[17,1.64,.1321,.2411,.79],'confirmed':[15,1.74,.1497,.0663,1.33]}
 rows=[]
 for label,title in [('direct','直接抄底'),('confirmed','企稳策略')]:
@@ -96,24 +86,18 @@ trade_table=trades[['trigger','entry','exit','contract','quantity','profit']].co
 trade_table.profit=(trade_table.profit/10_000).map(lambda x:f'{x:,.2f}')
 trade_table.columns=['大跌日','开仓日','平仓日','合约','手数','净收益/万元']
 trade_html=trade_table.to_html(index=False,border=0)
-rows=[]
-for key,title in labels.items():
-    m=metrics[key];rows.append([title,m['trades'],f'{m["annual_return"]*100:.2f}%',f'{m["max_drawdown"]*100:.2f}%',f'{m["sharpe"]:.2f}'])
-extension_table=pd.DataFrame(rows,columns=['策略','交易次数','年化收益','最大回撤','夏普']).to_html(index=False,border=0)
-
 html=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>大跌后企稳再入场：华泰期货研报复现</title>
 <style>
 :root{{color-scheme:light}}body{{margin:0;background:#f2f5f6;color:#243644;font:17px/1.85 "Microsoft YaHei","Noto Sans CJK SC",sans-serif}}main{{max-width:1040px;margin:36px auto;padding:48px 60px;background:white;border-top:7px solid #215a81}}h1{{font-size:34px;line-height:1.45;margin:14px 0 18px}}h2{{font-size:25px;margin:46px 0 14px;color:#174763}}h3{{font-size:19px;margin-top:28px}}p{{margin:14px 0}}a{{color:#226e9c}}.tag{{font-size:14px;letter-spacing:2px;color:#687c88}}.lead{{font-size:19px}}.callout{{background:#edf5fa;padding:20px 24px;border-left:4px solid #4c92b8}}.small,figcaption{{font-size:14px;color:#607382}}.table{{overflow-x:auto;margin:18px 0}}table{{border-collapse:collapse;width:100%;font-size:14px;white-space:nowrap}}th,td{{padding:10px 12px;border-bottom:1px solid #dfe7ec;text-align:right}}th{{background:#edf3f6;font-weight:600}}td:first-child,th:first-child{{text-align:left}}svg{{width:100%;height:auto}}code,pre{{font-family:Consolas,monospace;background:#eff3f5}}pre{{padding:18px;overflow-x:auto;line-height:1.65;font-size:14px}}.formula{{padding:12px 18px;background:#f6f8fa;font-family:Consolas,monospace;overflow-x:auto}}li{{margin:8px 0}}footer{{margin-top:42px;padding-top:18px;border-top:1px solid #dfe7ec;font-size:14px}}@media(max-width:700px){{main{{margin:0;padding:26px 20px}}h1{{font-size:27px}}h2{{font-size:23px}}body{{font-size:16px}}}}@media print{{body{{background:white}}main{{margin:0;max-width:none;padding:0;border:0}}h2{{break-after:avoid}}table,svg{{break-inside:avoid}}}}
 </style><main>
-<div class="tag">A股指数 · 股指期货 · 研报复现与因子扩展</div>
+<div class="tag">A股指数 · 股指期货 · 研报复现</div>
 <h1>大跌后企稳再入场：<br>把“左侧抄底”拆成可以检验的信号</h1>
-<p class="lead">本项目复现华泰期货研究院李光庭于2026年9月1日发布的量化专题研报《大跌后应该如何抄底2.0？——左侧+企稳确认》，研究中证1000大跌后的入场时机，并从中提炼可持续计算的新因子。</p>
+<p class="lead">本项目复现华泰期货研究院李光庭于2026年9月1日发布的量化专题研报《大跌后应该如何抄底2.0？——左侧+企稳确认》，研究中证1000大跌后的入场时机。</p>
 <p><a href="https://www.htfc.com/wz_upload/png_upload/20260909/1788943656749408f5b.pdf">阅读官网原件（15页）</a> · <a href="https://webtrade.htfc.com/main/a/20260909/80181909.shtml">官网发布页</a>。原件封面日期为9月1日，网站上传日期为9月9日。复现区间为2022年7月22日至2026年8月31日，共997个交易日。</p>
 <div class="callout"><strong>主要结果。</strong>企稳策略复现出15笔交易，年化收益14.983%，最大回撤6.625%；原文分别为14.97%和6.63%。直接抄底的17笔交易及24.11%最大回撤也得到还原。25组参数的年化收益最大差异为{validation['grid_annual_error_pp']:.3f}个百分点，最大回撤最大差异为{validation['grid_drawdown_error_pp']:.3f}个百分点。</div>
 <h2>1. 这项研究想解决什么问题</h2>
 <p>大跌后的反弹具有吸引力，但入场过早会经历继续下跌。研报把入场分成两步：先用连续五日跌幅找出恐慌阶段，再观察七个交易日，检查价格是否恢复到大跌日收盘之上。由此，研究重心从“跌得多不多”转向“卖压是否缓和”。</p>
-<p>这类规则适合作为后续研究的起点：跌幅、修复速度、波动变化和期货贴水都可以逐日计算。它既能形成择时策略，也能进一步变为连续的仓位因子。</p>
 <h2>2. 把文字规则还原成交易流程</h2>
 <ol><li>在交易日t收盘，计算五日收益 Cₜ/Cₜ₋₅−1；低于−4.92%时记录大跌信号。</li>
 <li>从t之后的下一交易日起等待七个交易日；若Cₜ₊₇≥Cₜ，则在t+8开盘买入。</li>
@@ -145,26 +129,16 @@ html=f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="vie
 <p>等待5日时，最大回撤仍在24%左右；等待6日之后，回撤整体显著下降。7日等待、20日持有位于一片表现接近的区域。相邻参数同样有效，使“确认企稳有助于改善持仓路径”得到更完整的支持。</p>
 <p>跨指数检验使用原文分别给出的五日跌幅阈值：上证50为−3.49%、沪深300为−3.45%、中证500为−4.32%、中证1000为−4.92%。分别交易IH、IF、IC、IM，按各自200或300元的乘数和历史开仓保证金计算手数；2023年5月5日前IC保证金为14%，IF与IH为12%，此后四者统一12%。</p>
 <div class="table">{cross_table}</div>
-<p>四个指数的交易次数全部一致，年化收益最大差异约0.067个百分点，最大回撤最大差异约0.013个百分点。中小盘在大跌后的弹性更强，企稳确认与其反弹结构更加匹配。这也是后续因子优先从中证500、中证1000展开的依据。</p>
-<h2>6. 从二元开关拓展为连续因子</h2>
-<p>最直接的启发是把“是否企稳”拆成三个问题：跌得多深、修复得多好、持仓成本是否有利。下面的变量均可在确认日收盘后形成，下一交易日执行。</p>
-<ul><li><strong>波动收缩因子：</strong>V=确认日最近5日收益波动/大跌日最近20日收益波动。V越低，表示等待期内价格波动已经收敛。可用来调整仓位，或与修复幅度形成交互项。</li>
-<li><strong>修复效率因子：</strong>E=(确认收盘/触发收盘−1)/等待期逐日绝对收益之和。同样的修复幅度，若过程更平稳，E会更高；它可以区分震荡反弹与持续修复。</li>
-<li><strong>贴水与修复交互因子：</strong>B=(指数收盘−合约收盘)/指数收盘×250/剩余交易日，再计算B×E。它把现货修复与期货持有成本放到同一框架，有助于研究反弹收益和贴水收敛各自的贡献。</li>
-<li><strong>标准化冲击因子：</strong>Z=−五日收益/(触发日前20日波动×√5)。同样5%的跌幅，在不同波动环境中代表不同的冲击强度。后续可按过去三年Z的分位数识别大跌，再结合E与V进行筛选。</li></ul>
-<p>先对前两个因子做最简单的仓位实验：保留原来的15次入场和出场，把保证金预算分别乘以clip(1/V,0.5,1)以及clip(E,0,1)。公式直接固定，全样本使用同一规则。</p>
-{extension_svg}<div class="table">{extension_table}</div>
-<p>波动收缩调仓把年化收益降到12.77%，最大回撤反而升到7.08%；修复效率调仓将回撤降至5.79%，同时将年化收益降至7.43%。这两个结果提示：简单缩仓容易削弱大反弹的收益，仓位压缩还可能改变净值高点，使回撤比例上升。下一步更值得检验的是“低波动＋较深贴水＋有效修复”的联合排序，以及在相同平均敞口下比较因子组合。</p>
-<p>后续验证可按时间顺序展开：2022—2024年研究因子关系，2025年固定公式与阈值，2026年逐月检验；同时报告交易次数、换手、成本、平均名义敞口和每笔收益贡献。原文固定−4.92%阈值的结果属于历史样本复现，面向逐日执行的扩展则用当时已知的滚动分位数生成信号。</p>
-<h2>7. 如何从零运行</h2>
+<p>四个指数的交易次数全部一致，年化收益最大差异约0.067个百分点，最大回撤最大差异约0.013个百分点。中小盘在大跌后的弹性更强，企稳确认与其反弹结构更加匹配。</p>
+<h2>6. 如何从零运行</h2>
 <pre>python -m pip install -r requirements.txt
 python download_data.py
 python reproduce.py
 python check_results.py
 python build_report.py</pre>
 <p>下载脚本保留原始文件及来源URL；回测脚本生成每日净值、全部交易、四指数绩效和参数矩阵；回测与核验脚本检查8个官方价格、两笔原文锚点、两次未来行情截断和参数矩阵误差；最后由本次输出生成这份HTML。原始数据保存在data/raw，计算输出保存在outputs。详细运行说明见同目录README。</p>
-<p>本次覆盖研报中的期货主策略、直接抄底对照、25组参数与四指数比较。平值看涨期权部分需要逐执行价历史报价，可沿用同一批入场信号进一步扩展。</p>
-<footer>资料：华泰期货研究院2026年9月1日原研报（第5—13页）；中证指数公司指数日线；国证指数官方交易日期；新浪逐合约行情；中金所官方日行情；中银国际期货转发中金所保证金通知。报告生成日期：2026-11-10。计算值随代码与公开数据一同核验。</footer>
+<p>本次覆盖研报中的期货主策略、直接抄底对照、25组参数与四指数比较。原文另有平值看涨期权对照，复现该部分需要逐执行价历史报价。</p>
+<footer>资料：华泰期货研究院2026年9月1日原研报（第5—13页）；中证指数公司指数日线；国证指数官方交易日期；新浪逐合约行情；中金所官方日行情；中银国际期货转发中金所保证金通知。报告生成日期：2026-11-12。计算值随代码与公开数据一同核验。</footer>
 </main></html>'''
 (ROOT / 'REPORT.html').write_text('\n'.join(line.rstrip() for line in html.splitlines()) + '\n',encoding='utf-8')
 print('REPORT.html generated; curve comparison:', curve_stats)

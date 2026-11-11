@@ -1,4 +1,4 @@
-"""执行固定规则、参数稳健性、跨指数复现及两个因子扩展。"""
+"""复现期货交易规则、参数稳健性和跨指数结果。"""
 from pathlib import Path
 import json
 import numpy as np
@@ -48,14 +48,11 @@ def metrics(nav, trades):
                 sharpe=float((annual - .02) / volatility), calmar=float(annual / drawdown))
 
 
-def simulate(indices, futures, expiries, prefix='IM', wait=7, hold=20, extension=None):
+def simulate(indices, futures, expiries, prefix='IM', wait=7, hold=20):
     q = indices[prefix]
     calendar = q.index
     _, threshold, multiplier = SETTINGS[prefix]
     shock = q.close.pct_change(5)
-    daily_return = q.close.pct_change()
-    vol5 = daily_return.rolling(5).std()
-    vol20 = daily_return.rolling(20).std()
     trades, free = [], -1
     for confirm, date in enumerate(calendar):
         trigger, entry = confirm - wait, confirm + 1
@@ -74,22 +71,13 @@ def simulate(indices, futures, expiries, prefix='IM', wait=7, hold=20, extension
         margin = .12
         if calendar[entry] < pd.Timestamp('2023-05-05'):
             margin = {'IM': .15, 'IC': .14, 'IF': .12, 'IH': .12}[prefix]
-        repair = q.close.iloc[confirm] / q.close.iloc[trigger] - 1
-        contraction = vol5.iloc[confirm] / vol20.iloc[trigger]
-        efficiency = repair / daily_return.iloc[trigger + 1:confirm + 1].abs().sum() if wait else 0.
-        scale = 1.
-        if extension == 'volatility':
-            scale = float(np.clip(1 / contraction, .5, 1))
-        elif extension == 'efficiency':
-            scale = float(np.clip(efficiency, 0, 1))
-        quantity = int(BUDGET * scale / (buy * multiplier * margin))
+        quantity = int(BUDGET / (buy * multiplier * margin))
         if quantity == 0:
             continue
         fee = quantity * multiplier * (buy + sell) * FEE
         trades.append(dict(trigger=calendar[trigger], confirm=date, entry=calendar[entry], exit=calendar[exit_day],
                            contract=name, quantity=quantity, margin_rate=margin, entry_price=buy, exit_price=sell,
-                           shock=shock.iloc[trigger], repair=repair, volatility_ratio=contraction,
-                           repair_efficiency=efficiency, budget_scale=scale,
+                           shock=shock.iloc[trigger],
                            profit=quantity * multiplier * (sell - buy) - fee))
         # 持仓期间产生的信号可在平仓后完成确认；平仓当日收盘可重新评估。
         free = exit_day
@@ -114,8 +102,7 @@ if __name__ == '__main__':
     OUT.mkdir(exist_ok=True)
     indices, futures, expiries = load_data()
     summaries, curves = {}, {}
-    for label, options in [('direct', dict(wait=0)), ('confirmed', {}),
-                           ('volatility', dict(extension='volatility')), ('efficiency', dict(extension='efficiency'))]:
+    for label, options in [('direct', dict(wait=0)), ('confirmed', {})]:
         nav, trades, summary = simulate(indices, futures, expiries, **options)
         curves[label], summaries[label] = nav, summary
         trades.to_csv(OUT / f'{label}_trades.csv', index=False, encoding='utf-8-sig')
