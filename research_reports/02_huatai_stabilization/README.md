@@ -5,6 +5,7 @@
 - [官网原研报PDF](https://www.htfc.com/wz_upload/png_upload/20260909/1788943656749408f5b.pdf)
 - [官网发布页](https://webtrade.htfc.com/main/a/20260909/80181909.shtml)
 - [复现结果报告](REPORT.html)：下载后用浏览器打开，图表已内嵌，可离线阅读。
+- [A 股承压日相对波动因子](FACTOR_REPORT.html) 从研报的企稳观察出发，检验个股的收益排序和扣费后的指数超额。
 
 研究覆盖中证1000实际股指期货交易，以及中证500、沪深300、上证50的跨指数比较。
 
